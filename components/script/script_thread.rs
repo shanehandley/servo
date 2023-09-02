@@ -3383,9 +3383,14 @@ impl ScriptThread {
             _ => IsHTMLDocument::HTMLDocument,
         };
 
-        let referrer = match metadata.referrer {
-            Some(ref referrer) => Some(referrer.clone().into_string()),
-            None => None,
+        // https://html.spec.whatwg.org/multipage/#creating-a-new-browsing-context
+        // 16.1 When determining the document referrer, when the creator is non-null, set document's
+        // referrer to the serialization of creator's URL.
+        let referrer = match &window_proxy.creator_base_url() {
+            Some(url) => Some(url.clone().into_string()),
+            _ => metadata
+                .referrer
+                .and_then(|r| Some(r.clone().into_string())),
         };
 
         let referrer_policy = metadata
