@@ -20,6 +20,7 @@ use crate::dom::window::Window;
 pub struct DataTransferItemList {
     reflector_: Reflector,
     list: DomRefCell<Vec<DomRoot<DataTransferItem>>>,
+    types: Vec<DOMString>
 }
 
 impl DataTransferItemList {
@@ -28,7 +29,8 @@ impl DataTransferItemList {
             reflector_: Reflector::new(),
             list: DomRefCell::new(list.iter().map(|item|
                 DomRoot::from_ref(&**item)
-            ).collect())
+            ).collect()),
+            types: vec![]
         }
     }
 
@@ -43,21 +45,7 @@ impl DataTransferItemList {
         )
     }
 
-    fn add(&self, item: DomRoot<DataTransferItem>) -> Option<DomRoot<DataTransferItem>> {
-        if self.list.borrow().iter().find(|x| *x == &item).is_none() {
-            self.list.borrow_mut().push(item.clone());
-
-            return Some(item)
-        }
-
-        None
-    }
-}
-
-#[allow(non_snake_case)]
-impl DataTransferItemListMethods for DataTransferItemList {
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-add
-    fn Add(&self, data: DOMString, type_: DOMString) -> Option<DomRoot<DataTransferItem>> {
+    pub fn add_string(&self, data: DOMString, type_: DOMString) -> Option<DomRoot<DataTransferItem>> {
         let item = DataTransferItem::new(
             &self.global().as_window(),
             DOMString::from_string("string".to_owned()),
@@ -68,12 +56,75 @@ impl DataTransferItemListMethods for DataTransferItemList {
         self.add(item)
     }
 
+    fn add(&self, item: DomRoot<DataTransferItem>) -> Option<DomRoot<DataTransferItem>> {
+        if self.list.borrow().iter().find(|x| *x == &item).is_none() {
+            self.list.borrow_mut().push(item.clone());
+
+            return Some(item)
+        }
+
+        None
+    }
+
+    // Remove each item in the item list whose kind is Plain Unicode string
+    pub fn remove_all_strings(&self) {
+        self.list.borrow_mut().retain(|item| {
+            item.kind() != DOMString::from_string("string".to_owned())
+        });
+    }
+
+    pub fn remove_by_format(&self, format: &DOMString) {
+        warn!("Removing item by format: {:?}", format.clone());
+
+        self.list.borrow_mut().retain(|item| {
+            &item.type_() != format
+        });
+    }
+
+    pub fn get_files(&self) -> Vec<DomRoot<File>> {
+        let files = self.list.borrow().iter().filter_map(
+            |item| item.get_as_file()
+        ).collect();
+
+        files
+    }
+
+    // <https://html.spec.whatwg.org/multipage/dnd.html#concept-datatransfer-types>
+    pub fn types(&self) -> Vec<DOMString> {
+        let mut types: Vec<DOMString> = self.list.borrow()
+            .iter()
+            .filter(|item| item.kind().to_ascii_lowercase() == "string")
+            .map(|item| item.type_())
+            .collect();
+
+        if self.list.borrow().iter().any(|item| match item.value() {
+            DataTransferItemValue::File(_) => true,
+                _ => false
+        }) {
+            types.push(DOMString::from_string("Files".to_owned()));
+        };
+
+        types
+    }
+}
+
+#[allow(non_snake_case)]
+impl DataTransferItemListMethods for DataTransferItemList {
+    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-add
+    fn Add(&self, data: DOMString, type_: DOMString) -> Option<DomRoot<DataTransferItem>> {
+        warn!("ADDING A STRING ===== {:?} | {:?}", data, type_);
+
+        self.add_string(data, type_)
+    }
+
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-add
     fn Add_(&self, data: &File) -> Option<DomRoot<DataTransferItem>> {
+        warn!("ADDING A FILE ===== {:?} | {:?}", data.name(), data.type_string());
+
         let item = DataTransferItem::new(
             &self.global().as_window(),
             DOMString::from_string("file".to_owned()),
-            DOMString::new(),
+            DOMString::from_string(data.type_string()),
             DataTransferItemValue::File(DomRoot::from_ref(data))
         );
 
