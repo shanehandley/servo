@@ -28,16 +28,16 @@ pub enum DataTransferItemValue {
 pub struct DataTransferItem {
     reflector_: Reflector,
     kind: DOMString, // 'string' or 'file'
-    r#type: DOMString,
+    type_: DOMString,
     value: DataTransferItemValue,
 }
 
 impl DataTransferItem {
-    fn new_inherited(kind: DOMString, r#type: DOMString, value: DataTransferItemValue) -> DataTransferItem {
+    fn new_inherited(kind: DOMString, type_: DOMString, value: DataTransferItemValue) -> DataTransferItem {
         DataTransferItem {
             reflector_: Reflector::new(),
             kind,
-            r#type,
+            type_,
             value
         }
     }
@@ -45,16 +45,36 @@ impl DataTransferItem {
     pub fn new(
         window: &Window,
         kind: DOMString,
-        r#type: DOMString,
+        type_: DOMString,
         value: DataTransferItemValue
     ) -> DomRoot<DataTransferItem> {
         reflect_dom_object(
             Box::new(DataTransferItem::new_inherited(
-                kind, r#type, value
+                kind, type_, value
             )),
             window,
         )
     }
+
+    pub fn kind(&self) -> DOMString {
+        self.kind.clone()
+    }
+
+    pub fn type_(&self) -> DOMString {
+        self.type_.clone()
+    }
+
+    pub fn value(&self) -> DataTransferItemValue {
+        self.value.clone()
+    }
+
+    pub fn get_as_file(&self) -> Option<DomRoot<File>> {
+        match &self.value {
+            DataTransferItemValue::File(f) => Some(f.clone()),
+            _ => None
+        }
+    }
+
 }
 
 #[allow(non_snake_case)]
@@ -68,19 +88,16 @@ impl DataTransferItemMethods for DataTransferItem {
 
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitem-getasfile
     fn GetAsFile(&self) -> Option<DomRoot<File>> {
-        match &self.value {
-            DataTransferItemValue::File(f) => Some(f.clone()),
-            _ => None
-        }
+        self.get_as_file()
     }
 
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitem-kind
     fn Kind(&self) -> DOMString {
-        self.kind.clone()
+        self.kind()
     }
 
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitem-type
     fn Type(&self) -> DOMString {
-        self.r#type.clone()
+        self.type_.clone()
     }
 }
