@@ -11,7 +11,6 @@ use crate::dom::bindings::codegen::Bindings::DataTransferItemBinding::{
 };
 use crate::dom::bindings::callback::ExceptionHandling;
 use crate::dom::bindings::reflector::{Reflector, reflect_dom_object};
-use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::window::Window;
