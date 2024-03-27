@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use std::borrow::Borrow;
 use std::cell::Cell;
 use std::convert::TryFrom;
 
@@ -10,12 +9,15 @@ use dom_struct::dom_struct;
 
 use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::codegen::Bindings::DataTransferItemListBinding::DataTransferItemListMethods;
+use crate::dom::bindings::error::{Error, Fallible};
 use crate::dom::bindings::reflector::{DomObject, reflect_dom_object, Reflector};
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::datatransferitem::{DataTransferItem, DataTransferItemValue};
 use crate::dom::file::File;
 use crate::dom::window::Window;
+
+use servo_rand::random;
 
 #[derive(JSTraceable, MallocSizeOf, PartialEq)]
 pub enum DataTransferMode {
@@ -31,6 +33,7 @@ pub struct DataTransferItemList {
     list: DomRefCell<Vec<DomRoot<DataTransferItem>>>,
     types: DomRefCell<Vec<DOMString>>,
     mode: DataTransferMode,
+    cache_key: Cell<u32>
 }
 
 impl DataTransferItemList {
@@ -42,6 +45,7 @@ impl DataTransferItemList {
             ).collect()),
             types: DomRefCell::new(vec![]),
             mode: DataTransferMode::ReadWrite,
+            cache_key: Cell::new(0)
         }
     }
 
@@ -56,31 +60,35 @@ impl DataTransferItemList {
         )
     }
 
-    pub fn add_string(&self, data: DOMString, type_: DOMString) -> Option<DomRoot<DataTransferItem>> {
-        let item = DataTransferItem::new(
-            &self.global().as_window(),
-            DOMString::from("string"),
-            type_, 
-            DataTransferItemValue::String(data)
-        );
-
-        self.add(item)
-    }
-
-    fn add(&self, item: DomRoot<DataTransferItem>) -> Option<DomRoot<DataTransferItem>> {
-        if self.list.borrow().iter().find(|x| *x == &item).is_none() {
-            self.list.borrow_mut().push(item.clone());
-
-            self.regenerate_types();
-
-            return Some(item)
+    pub fn add_string(&self, data: DOMString, format: DOMString) -> Fallible<Option<DomRoot<DataTransferItem>>> {
+        if self.list.borrow().iter().find(
+            |x| *x.type_() == format.clone().to_ascii_lowercase().as_str().to_owned()
+        ).is_some() {
+            return Err(Error::NotSupported);
         }
 
-        None
+        Ok(Some(self.add(DataTransferItem::new(
+            &self.global().as_window(),
+            DOMString::from("string"),
+            format, 
+            DataTransferItemValue::String(data)
+        ))))
+    }
+
+    fn add(&self, item: DomRoot<DataTransferItem>) -> DomRoot<DataTransferItem> {
+        self.list.borrow_mut().push(item.clone());
+
+        self.regenerate_types();
+
+        return item
     }
 
     // Remove each item in the item list whose kind is Plain Unicode string
     pub fn remove_string_entries(&self) {
+        if self.list.borrow().is_empty() {
+            return;
+        }
+
         self.list.borrow_mut().retain(|item| {
             item.kind() != DOMString::from_string("string".to_owned())
         });
@@ -89,6 +97,16 @@ impl DataTransferItemList {
     }
 
     pub fn remove_string_entries_by_format(&self, format: &DOMString) {
+        if self.list.borrow().is_empty() {
+            return;
+        }
+
+        if !self.list.borrow().iter().any(
+            |item| &item.type_() == format
+        ) {
+            return;
+        }
+
         self.list.borrow_mut().retain(|item| {
             &item.kind() == "file" || &item.type_() != format
         });
@@ -122,10 +140,15 @@ impl DataTransferItemList {
         };
 
         *self.types.borrow_mut() = types;
+        self.cache_key.set(random::<u32>());
     }
 
     pub fn types(&self) -> Vec<DOMString> {
         self.types.borrow().to_vec()
+    }
+
+    pub fn cache_key(&self) -> u32 {
+        self.cache_key.get()
     }
 
     pub fn get_mode(&self) -> &DataTransferMode {
@@ -136,25 +159,40 @@ impl DataTransferItemList {
 #[allow(non_snake_case)]
 impl DataTransferItemListMethods for DataTransferItemList {
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-add
-    fn Add(&self, data: DOMString, type_: DOMString) -> Option<DomRoot<DataTransferItem>> {
-        // Step 1
-        if self.mode != DataTransferMode::ReadWrite {
-            return None;
-        }
-
+    fn Add(&self, data: DOMString, type_: DOMString) -> Fallible<Option<DomRoot<DataTransferItem>>> {
         warn!("ADDING A STRING ===== {:?} | {:?}", data, type_);
 
-        self.add_string(data, type_)
+        // Step 1
+        if self.mode != DataTransferMode::ReadWrite {
+            return Ok(None);
+        }
+
+        // Step 2.1
+        if self.list.borrow().iter().find(
+            |x| *x.type_() == type_.clone().to_ascii_lowercase().as_str().to_owned()
+        ).is_some() {
+            return Err(Error::NotSupported);
+        }
+
+        // Step 2.2
+        let item = DataTransferItem::new(
+            &self.global().as_window(),
+            DOMString::from("string"),
+            type_, 
+            DataTransferItemValue::String(data)
+        );
+
+        return Ok(Some(self.add(item)))
     }
 
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-add
-    fn Add_(&self, data: &File) -> Option<DomRoot<DataTransferItem>> {
+    fn Add_(&self, data: &File) -> Fallible<Option<DomRoot<DataTransferItem>>> {
+        warn!("ADDING A FILE ===== {:?} | {:?}", data.name(), data.type_string());
+
         // Step 1
         if self.mode != DataTransferMode::ReadWrite {
-            return None;
+            return Ok(None);
         }
-
-        warn!("ADDING A FILE ===== {:?} | {:?}", data.name(), data.type_string());
 
         let item = DataTransferItem::new(
             &self.global().as_window(),
@@ -163,14 +201,14 @@ impl DataTransferItemListMethods for DataTransferItemList {
             DataTransferItemValue::File(DomRoot::from_ref(data))
         );
 
-        self.add(item)
+        Ok(Some(self.add(item)))
     }
 
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-remove
-    fn Remove(&self, index: u32) {
+    fn Remove(&self, index: u32) -> Fallible<()> {
         // Step 1
         if self.mode != DataTransferMode::ReadWrite {
-            return;
+            return Err(Error::InvalidState);
         }
 
         if let Ok(i) = usize::try_from(index) {
@@ -178,18 +216,21 @@ impl DataTransferItemListMethods for DataTransferItemList {
             if i < self.list.borrow().len() {
                 // Step 3
                 self.list.borrow_mut().remove(i);
-
                 self.regenerate_types();
             }
         }
+
+        Ok(())
     }
 
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-clear
     fn Clear(&self) {
         if self.mode == DataTransferMode::ReadWrite {
-            self.list.borrow_mut().clear();
-
-            self.regenerate_types();
+            // Avoid regenerating the internal types cache key when the item list is already empty
+            if !self.list.borrow().is_empty() {
+                self.list.borrow_mut().clear();
+                self.regenerate_types();
+            }
         }
     }
 

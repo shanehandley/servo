@@ -8,6 +8,8 @@ use js::jsapi::Heap;
 use js::rust::HandleObject;
 use js::jsval::JSVal;
 
+use std::cell::Cell;
+
 use crate::dom::bindings::codegen::Bindings::FileListBinding::FileList_Binding::FileListMethods;
 use crate::dom::bindings::codegen::Bindings::DataTransferBinding::{DataTransferMethods, DropEffect, EffectAllowed};
 use crate::dom::bindings::reflector::{DomObject, Reflector, reflect_dom_object};
@@ -30,7 +32,7 @@ pub struct DataTransfer {
     effect_allowed: EffectAllowed,
     items: DomRoot<DataTransferItemList>,
     files: DomRoot<FileList>,
-    types: DomRefCell<Option<Vec<DOMString>>>,
+    cache_key: Cell<u32>,
     #[ignore_malloc_size_of = "mozjs"]
     frozen_types: DomRefCell<Option<Heap<JSVal>>>,
 }
@@ -44,7 +46,7 @@ impl DataTransfer {
             effect_allowed: EffectAllowed::None,
             items,
             files,
-            types: DomRefCell::new(None),
+            cache_key: Cell::new(0),
             frozen_types: DomRefCell::new(None),
         }
     }
@@ -147,7 +149,7 @@ impl DataTransferMethods for DataTransfer {
         // Step 6
         // Add an item to the drag data store item list whose kind is text, whose type string is
         // equal to format, and whose data is the string given by the method's second argument.
-        self.items.add_string(data, parsed_format);
+        let _ = self.items.add_string(data, parsed_format);
     }
     
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-cleardata>
@@ -212,29 +214,24 @@ impl DataTransferMethods for DataTransfer {
 
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-types>
     fn Types(&self, cx: SafeJSContext) -> JSVal {
-        // To determine whether we can return a cached value of frozen_types, or whether we need to
-        // regenerate it before returning, compare our cached value for `types` with the value
-        // returned by our DataTransferItemList
-        let list_types = self.items.types();
-        let cached_types = self.types.borrow().clone().unwrap_or(vec![]);
-
-        if cached_types == list_types {
+        if self.items.cache_key() == self.cache_key.get() {
             if let Some(types) = &*self.frozen_types.borrow() {
                 return types.get();
             }
         }
 
-        let frozen_types = to_frozen_array(list_types.as_slice(), cx);
+        let frozen_types = to_frozen_array(self.items.types().as_slice(), cx);
 
         // Safety: need to create the Heap value in its final memory location before setting it.
         *self.frozen_types.borrow_mut() = Some(Heap::default());
-        *self.types.borrow_mut() = Some(list_types);
 
         self.frozen_types
             .borrow()
             .as_ref()
             .unwrap()
             .set(frozen_types);
+
+        self.cache_key.set(self.items.cache_key());
 
         frozen_types
     }
