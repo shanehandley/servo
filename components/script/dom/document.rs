@@ -67,6 +67,8 @@ use url::Host;
 use uuid::Uuid;
 use webrender_api::units::DeviceIntRect;
 
+use super::bindings::trace::{HashMapTracedValues, NoTrace};
+use super::dragevent::DragEvent;
 use crate::animation_timeline::AnimationTimeline;
 use crate::animations::Animations;
 use crate::document_loader::{DocumentLoader, LoadType};
@@ -4571,7 +4573,7 @@ impl DocumentMethods for Document {
                 self.window.upcast(),
             ))),
             // FIXME(#25136): devicemotionevent, deviceorientationevent
-            // FIXME(#7529): dragevent
+            "dragevent" => Ok(DomRoot::upcast(DragEvent::new_uninitialized(&self.window))),
             "events" | "event" | "htmlevents" | "svgevents" => {
                 Ok(Event::new_uninitialized(self.window.upcast()))
             },
