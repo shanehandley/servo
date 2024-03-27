@@ -1170,6 +1170,37 @@ impl HTMLFormElement {
         submitter: Option<FormSubmitter>,
         encoding: Option<&'static Encoding>,
     ) -> Option<Vec<FormDatum>> {
+        fn clean_crlf(s: &str) -> DOMString {
+            // Step 4
+            let mut buf = "".to_owned();
+            let mut prev = ' ';
+            for ch in s.chars() {
+                match ch {
+                    '\n' if prev != '\r' => {
+                        buf.push('\r');
+                        buf.push('\n');
+                    },
+                    '\n' => {
+                        buf.push('\n');
+                    },
+                    // This character isn't LF but is
+                    // preceded by CR
+                    _ if prev == '\r' => {
+                        buf.push('\r');
+                        buf.push('\n');
+                        buf.push(ch);
+                    },
+                    _ => buf.push(ch),
+                };
+                prev = ch;
+            }
+            // In case the last character was CR
+            if prev == '\r' {
+                buf.push('\n');
+            }
+            DOMString::from(buf)
+        }
+
         // Step 1
         if self.constructing_entry_list.get() {
             return None;
@@ -1179,7 +1210,19 @@ impl HTMLFormElement {
         self.constructing_entry_list.set(true);
 
         // Step 3-6
-        let ret = self.get_unclean_dataset(submitter, encoding);
+        let mut ret = self.get_unclean_dataset(submitter, encoding);
+        for datum in &mut ret {
+            match &*datum.ty {
+                "file" | "textarea" => (), // TODO
+                _ => {
+                    datum.name = clean_crlf(&datum.name);
+                    datum.value = FormDatumValue::String(clean_crlf(match datum.value {
+                        FormDatumValue::String(ref s) => s,
+                        FormDatumValue::File(_) => unreachable!(),
+                    }));
+                },
+            }
+        }
 
         let window = window_from_node(self);
 
@@ -1713,51 +1756,14 @@ pub fn encode_multipart_form_data(
     boundary: String,
     encoding: &'static Encoding,
 ) -> Vec<u8> {
+    // Step 1
     let mut result = vec![];
 
-    fn clean_crlf(s: &str) -> DOMString {
-        let mut buf = "".to_owned();
-        let mut prev = ' ';
-        for ch in s.chars() {
-            match ch {
-                '\n' if prev != '\r' => {
-                    buf.push('\r');
-                    buf.push('\n');
-                },
-                '\n' => {
-                    buf.push('\n');
-                },
-                // This character isn't LF but is
-                // preceded by CR
-                _ if prev == '\r' => {
-                    buf.push('\r');
-                    buf.push('\n');
-                    buf.push(ch);
-                },
-                _ => buf.push(ch),
-            };
-            prev = ch;
-        }
-        // In case the last character was CR
-        if prev == '\r' {
-            buf.push('\n');
-        }
-        DOMString::from(buf)
-    }
-
+    // Step 2
     for entry in form_data.iter_mut() {
-        // Step 1.1
-        entry.name = clean_crlf(&entry.name);
+        // TODO: Step 2.1
 
-        // Step 1.2
-        match &entry.value {
-            FormDatumValue::String(ref s) => {
-                entry.value = FormDatumValue::String(clean_crlf(s))
-            },
-            _ => ()
-        }
-
-        // Step 2
+        // Step 3
         // https://tools.ietf.org/html/rfc7578#section-4
         // NOTE(izgzhen): The encoding here expected by most servers seems different from
         // what spec says (that it should start with a '\r\n').
