@@ -10,28 +10,42 @@ use js::jsval::JSVal;
 
 use std::cell::Cell;
 
-use crate::dom::bindings::codegen::Bindings::FileListBinding::FileList_Binding::FileListMethods;
 use crate::dom::bindings::codegen::Bindings::DataTransferBinding::{DataTransferMethods, DropEffect, EffectAllowed};
 use crate::dom::bindings::reflector::{DomObject, Reflector, reflect_dom_object_with_proto};
+use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::bindings::utils::to_frozen_array;
+use crate::dom::datatransferitem::DataTransferItemValue;
 use crate::dom::datatransferitemlist::{DataTransferMode, DataTransferItemList};
 use crate::dom::element::Element;
 use crate::dom::filelist::FileList;
+use crate::dom::htmlimageelement::HTMLImageElement;
 use crate::dom::window::Window;
 use crate::script_runtime::JSContext as SafeJSContext;
 use crate::test::DomRefCell;
+
+// Optional UI information when a DataTransfer object is associated with drag & drop event
+// <https://html.spec.whatwg.org/multipage/dnd.html#drag-data-store-bitmap>
+#[derive(JSTraceable, MallocSizeOf, PartialEq)]
+struct DataTransferBitmap {
+    image: DomRoot<HTMLImageElement>,
+    image_x: i32,
+    image_y: i32
+}
 
 // https://html.spec.whatwg.org/multipage/dnd.html#datatransfer
 #[dom_struct]
 pub struct DataTransfer {
     reflector_: Reflector,
-    drop_effect: DropEffect,
-    effect_allowed: EffectAllowed,
+    drop_effect: DomRefCell<DropEffect>,
+    effect_allowed: DomRefCell<EffectAllowed>,
     item_list: DomRoot<DataTransferItemList>,
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-files>
     files: DomRoot<FileList>,
+    // <https://html.spec.whatwg.org/multipage/dnd.html#drag-data-store-bitmap>
+    bitmap_image: DomRefCell<Option<DataTransferBitmap>>,
+    // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-types>
     #[ignore_malloc_size_of = "mozjs"]
     frozen_types: DomRefCell<Option<Heap<JSVal>>>,
     // Used to co-ordinate the cached value of frozen_types with self.item_list
@@ -46,19 +60,14 @@ impl DataTransfer {
     ) -> DataTransfer {
         DataTransfer {
             reflector_: Reflector::new(),
-            drop_effect: DropEffect::None,
-            effect_allowed: EffectAllowed::None,
+            drop_effect: DomRefCell::new(DropEffect::None),
+            effect_allowed: DomRefCell::new(EffectAllowed::None),
             item_list,
             files,
+            bitmap_image: DomRefCell::new(None),
             frozen_types: DomRefCell::new(None),
             cache_key: Cell::new(0),
         }
-    }
-
-    pub fn new(
-        global: &Window,
-    ) -> DomRoot<DataTransfer> {
-        Self::new_with_proto(global, None)
     }
 
     #[allow(crown::unrooted_must_root)]
@@ -89,53 +98,89 @@ impl DataTransfer {
 
 #[allow(non_snake_case)]
 impl DataTransferMethods for DataTransfer {
+    // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-dropeffect>
     fn DropEffect(&self) -> DropEffect {
-        self.drop_effect
+        *self.drop_effect.borrow()
     }
-    
+
     fn SetDropEffect(&self, value: DropEffect) {
-
-    }
-
-    fn EffectAllowed(&self) -> EffectAllowed {
-        self.effect_allowed
-    }
-    
-    // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-effectallowed>
-    fn SetEffectAllowed(&self, value: EffectAllowed) {
-        if self.item_list.get_mode() == &DataTransferMode::ReadWrite {
-            // TODO
+        if self.item_list.get_mode() == DataTransferMode::ReadWrite {
+            *self.drop_effect.borrow_mut() = value;
         }
     }
-    
+
+    // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-effectallowed>
+    fn EffectAllowed(&self) -> EffectAllowed {
+        *self.effect_allowed.borrow()
+    }
+
+    fn SetEffectAllowed(&self, value: EffectAllowed) {
+        if self.item_list.get_mode() == DataTransferMode::ReadWrite {
+            *self.effect_allowed.borrow_mut() = value;
+        }
+    }
+
+    // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-items>
     fn Items(&self) -> DomRoot<DataTransferItemList> {
         self.item_list.clone()
     }
-    
+
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-setdragimage>
     fn SetDragImage(&self, image: &Element, x: i32, y: i32) {
-        
+        // TODO Step 1
+
+        // Step 2
+        if self.item_list.get_mode() != DataTransferMode::ReadWrite {
+            return;
+        }
+
+        // Step 3
+        if image.is::<HTMLImageElement>() {
+            if let Some(image_element) = image.downcast::<HTMLImageElement>() {
+                *self.bitmap_image.borrow_mut() = Some(DataTransferBitmap {
+                    image: DomRoot::from_ref(image_element),
+                    image_x: x,
+                    image_y: y
+                })
+            }
+        }
     }
 
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-getdata>
     fn GetData(&self, format: DOMString) -> DOMString {
         // TODO Step 1
-        
+
         // Step 2
-        if self.item_list.get_mode() == &DataTransferMode::Protected {
+        if self.item_list.get_mode() == DataTransferMode::Protected {
             return DOMString::new()
         }
 
+        let string_format = format.to_ascii_lowercase();
+
         // Step 3, 4, 5 & 6
-        let _fmt = match format.to_ascii_lowercase().as_str() {
+        let parsed_format = match string_format.as_str() {
             "text" => "text/plain",
             "url" => "text/uri-list",
             f => f
         };
 
-        // Step 7
+        let value: Option<DataTransferItemValue> = self.item_list.get_string_value_by_format(
+            DOMString::from(parsed_format)
+        );
 
-        DOMString::new()
+        // Step 7
+        if value.is_none() {
+            return DOMString::new()
+        }
+
+        // Step 8, 9, & 10
+        match (value, parsed_format) {
+            (Some(DataTransferItemValue::String(val)), "text/uri-list") => {
+                val
+            },
+            (Some(DataTransferItemValue::String(val)), _) => val,
+            _ => DOMString::new(),
+        }
     }
 
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-setdata>
@@ -143,7 +188,7 @@ impl DataTransferMethods for DataTransfer {
         // TODO Step 1
 
         // Step 2
-        if self.item_list.get_mode() != &DataTransferMode::ReadWrite {
+        if self.item_list.get_mode() != DataTransferMode::ReadWrite {
             return;
         }
 
@@ -152,29 +197,23 @@ impl DataTransferMethods for DataTransfer {
             match format.to_ascii_lowercase().as_str() {
                 "text" => "text/plain",
                 "url" => "text/uri-list",
-                lowercase_format => lowercase_format
+                f => f
             }.to_owned()
         );
 
         // Step 5
-        // Remove the item in the drag data store item list whose kind is text and whose type string
-        // is equal to format, if there is one.
         self.item_list.remove_string_entries_by_format(&parsed_format);
 
         // Step 6
-        // Add an item to the drag data store item list whose kind is text, whose type string is
-        // equal to format, and whose data is the string given by the method's second argument.
         let _ = self.item_list.add_string(data, parsed_format);
     }
-    
+
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-cleardata>
     fn ClearData(&self, format: Option<DOMString>) {
-        warn!("CLEARING DATA ==== {:?}", format.clone().unwrap_or(DOMString::from_string("none_provided".to_owned())));
-
         // TODO Step 1
 
         // Step 2
-        if self.item_list.get_mode() != &DataTransferMode::ReadWrite {
+        if self.item_list.get_mode() != DataTransferMode::ReadWrite {
             return;
         }
 
@@ -195,40 +234,18 @@ impl DataTransferMethods for DataTransfer {
             }
         }
     }
-    
+
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-files>
     fn Files(&self) -> DomRoot<FileList> {
-        let file_list = FileList::new(
+        FileList::new(
             &self.global().as_window(),
             self.item_list.get_files()
-        );
-
-        // This is causing a crash
-//         /**
-//          * Traceback (most recent call last):
-//     File "/Users/shane/code/servo/tests/wpt/tests/tools/wptserve/wptserve/handlers.py", line 373, in __call__
-//     rv = self.func(request, response)
-
-//     File "/Users/shane/code/servo/tests/wpt/tests/html/semantics/forms/form-submission-0/resources/file-submission.py", line 7, in main
-//     testinput = request.POST.first(b"testinput")
-
-//     File "/Users/shane/code/servo/tests/wpt/tests/tools/wptserve/wptserve/request.py", line 576, in first
-//     raise KeyError(key)
-//   KeyError: b'testinput'
-//          */
-        warn!("FILE LIST LENGTH ==== {:?}", file_list.Length());
-        
-        for file in file_list.iter_files() {
-            warn!("FILE === {:?}", file.name());
-        }
-
-        let files = self.files.clone();
-
-        file_list
+        )
     }
 
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-types>
     fn Types(&self, cx: SafeJSContext) -> JSVal {
+        // If our cache key matches the item_lists's cache key, we're safe to return the cached value
         if self.item_list.cache_key() == self.cache_key.get() {
             if let Some(types) = &*self.frozen_types.borrow() {
                 return types.get();
