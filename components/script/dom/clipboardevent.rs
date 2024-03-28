@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
- use dom_struct::dom_struct;
- use js::rust::HandleObject;
- use servo_atoms::Atom;
+use dom_struct::dom_struct;
+use js::rust::HandleObject;
+use servo_atoms::Atom;
  
-use crate::dom::bindings::codegen::Bindings::MouseEventBinding::MouseEventMethods;
-use crate::dom::bindings::codegen::Bindings::DragEventBinding::{DragEventInit, DragEventMethods};
+use crate::dom::bindings::codegen::Bindings::EventBinding::Event_Binding::EventMethods;
+use crate::dom::bindings::codegen::Bindings::ClipboardEventBinding::{ClipboardEventInit, ClipboardEventMethods};
 use crate::dom::bindings::error::Fallible;
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::reflector::{reflect_dom_object, reflect_dom_object_with_proto};
@@ -15,34 +15,34 @@ use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::datatransfer::DataTransfer;
 use crate::dom::event::Event;
-use crate::dom::types::MouseEvent;
 use crate::dom::window::Window;
 
+// <https://w3c.github.io/clipboard-apis/#clipboard-event-interfaces>
 #[dom_struct]
-pub struct DragEvent {
-    mouseevent: MouseEvent,
-    data_transfer: Option<DomRoot<DataTransfer>>,
+pub struct ClipboardEvent {
+    event: Event,
+    clipboard_data: Option<DomRoot<DataTransfer>>,
 }
 
-impl DragEvent {
+impl ClipboardEvent {
     pub fn new_uninitialized(
         global: &Window,
-    ) -> DomRoot<DragEvent> {
+    ) -> DomRoot<ClipboardEvent> {
         reflect_dom_object(
-            Box::new(DragEvent::new_inherited(None)),
+            Box::new(ClipboardEvent::new_inherited(None)),
             global,
         )
     }
 
-    fn new_inherited(init: Option<&DragEventInit>) -> DragEvent {
-        // <https://html.spec.whatwg.org/multipage/dnd.html#drageventinit>
-        let data_transfer = init.unwrap_or(
-            &DragEventInit::empty()
-        ).dataTransfer.clone();
+    fn new_inherited(init: Option<&ClipboardEventInit>) -> ClipboardEvent {
+        // <https://w3c.github.io/clipboard-apis/#clipboardevent>
+        let clipboard_data = init.unwrap_or(
+            &ClipboardEventInit::empty()
+        ).clipboardData.clone();
 
-        DragEvent {
-            mouseevent: MouseEvent::new_inherited(),
-            data_transfer
+        ClipboardEvent {
+            event: Event::new_inherited(),
+            clipboard_data
         }
     }
 
@@ -50,10 +50,10 @@ impl DragEvent {
         global: &Window,
         proto: Option<HandleObject>,
         type_: DOMString,
-        init: &DragEventInit
-    ) -> DomRoot<DragEvent> {
+        init: &ClipboardEventInit
+    ) -> DomRoot<ClipboardEvent> {
         let ev = reflect_dom_object_with_proto(
-            Box::new(DragEvent::new_inherited(Some(init))),
+            Box::new(ClipboardEvent::new_inherited(Some(init))),
             global,
             proto
         );
@@ -71,9 +71,9 @@ impl DragEvent {
         global: &Window,
         proto: Option<HandleObject>,
         type_: DOMString,
-        init: &DragEventInit
-    ) -> Fallible<DomRoot<DragEvent>> {
-        let event = DragEvent::new_with_proto(
+        init: &ClipboardEventInit
+    ) -> Fallible<DomRoot<ClipboardEvent>> {
+        let event = ClipboardEvent::new_with_proto(
             global,
             proto,
             type_,
@@ -85,12 +85,12 @@ impl DragEvent {
 }
 
 #[allow(non_snake_case)]
-impl DragEventMethods for DragEvent {
-    fn GetDataTransfer(&self) -> Option<DomRoot<DataTransfer>> {
-        self.data_transfer.clone()
+impl ClipboardEventMethods for ClipboardEvent {
+    fn GetClipboardData(&self) -> Option<DomRoot<DataTransfer>> {
+        self.clipboard_data.clone()
     }
 
     fn IsTrusted(&self) -> bool {
-        self.mouseevent.IsTrusted()
+        self.event.IsTrusted()
     }
 }

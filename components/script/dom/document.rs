@@ -68,7 +68,6 @@ use uuid::Uuid;
 use webrender_api::units::DeviceIntRect;
 
 use super::bindings::trace::{HashMapTracedValues, NoTrace};
-use super::dragevent::DragEvent;
 use crate::animation_timeline::AnimationTimeline;
 use crate::animations::Animations;
 use crate::document_loader::{DocumentLoader, LoadType};
@@ -107,6 +106,7 @@ use crate::dom::bindings::xmlname::{
     namespace_from_domstring, validate_and_extract, xml_name_type,
 };
 use crate::dom::cdatasection::CDATASection;
+use crate::dom::clipboardevent::ClipboardEvent;
 use crate::dom::comment::Comment;
 use crate::dom::compositionevent::CompositionEvent;
 use crate::dom::cssstylesheet::CSSStyleSheet;
@@ -116,6 +116,7 @@ use crate::dom::documentfragment::DocumentFragment;
 use crate::dom::documentorshadowroot::{DocumentOrShadowRoot, StyleSheetInDocument};
 use crate::dom::documenttype::DocumentType;
 use crate::dom::domimplementation::DOMImplementation;
+use crate::dom::dragevent::DragEvent;
 use crate::dom::element::{
     CustomElementCreationMode, Element, ElementCreator, ElementPerformFullscreenEnter,
     ElementPerformFullscreenExit,
@@ -4573,7 +4574,9 @@ impl DocumentMethods for Document {
                 self.window.upcast(),
             ))),
             // FIXME(#25136): devicemotionevent, deviceorientationevent
-            "dragevent" => Ok(DomRoot::upcast(DragEvent::new_uninitialized(&self.window))),
+            "dragevent" => Ok(DomRoot::upcast(DragEvent::new_uninitialized(
+                &self.window
+            ))),
             "events" | "event" | "htmlevents" | "svgevents" => {
                 Ok(Event::new_uninitialized(self.window.upcast()))
             },

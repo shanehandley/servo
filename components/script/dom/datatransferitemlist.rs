@@ -19,8 +19,10 @@ use crate::dom::window::Window;
 
 use servo_rand::random;
 
-#[derive(JSTraceable, MallocSizeOf, PartialEq)]
+// <https://html.spec.whatwg.org/multipage/dnd.html#drag-data-store-mode>
+#[derive(Clone, JSTraceable, MallocSizeOf, PartialEq)]
 pub enum DataTransferMode {
+    #[allow(dead_code)]
     ReadOnly,
     ReadWrite,
     Protected
@@ -32,7 +34,7 @@ pub struct DataTransferItemList {
     reflector_: Reflector,
     list: DomRefCell<Vec<DomRoot<DataTransferItem>>>,
     types: DomRefCell<Vec<DOMString>>,
-    mode: DataTransferMode,
+    mode: DomRefCell<DataTransferMode>,
     cache_key: Cell<u32>
 }
 
@@ -44,7 +46,7 @@ impl DataTransferItemList {
                 DomRoot::from_ref(&**item)
             ).collect()),
             types: DomRefCell::new(vec![]),
-            mode: DataTransferMode::ReadWrite,
+            mode: DomRefCell::new(DataTransferMode::ReadWrite),
             cache_key: Cell::new(0)
         }
     }
@@ -96,6 +98,7 @@ impl DataTransferItemList {
         self.regenerate_types();
     }
 
+    // Remove each item in the item list whose `type` matches the format
     pub fn remove_string_entries_by_format(&self, format: &DOMString) {
         if self.list.borrow().is_empty() {
             return;
@@ -112,6 +115,12 @@ impl DataTransferItemList {
         });
 
         self.regenerate_types();
+    }
+
+    pub fn get_string_value_by_format(&self, format: DOMString) -> Option<DataTransferItemValue> {
+        self.list.borrow().iter().find(
+            |item| &item.kind() != "file" && item.type_() == format
+        ).map(|item| item.value())
     }
 
     pub fn get_files(&self) -> Vec<DomRoot<File>> {
@@ -143,16 +152,28 @@ impl DataTransferItemList {
         self.cache_key.set(random::<u32>());
     }
 
+    // A list of types evaluated after the last mutation of the list
     pub fn types(&self) -> Vec<DOMString> {
         self.types.borrow().to_vec()
     }
 
+    // A random number generated after the types were last evaluated
     pub fn cache_key(&self) -> u32 {
         self.cache_key.get()
     }
 
-    pub fn get_mode(&self) -> &DataTransferMode {
-        &self.mode
+    // The current edit mode, describing the level of access to internal data. The access provided
+    // to internal state varies based on the user's action.
+    //
+    // <https://html.spec.whatwg.org/multipage/dnd.html#dndevents>
+    pub fn get_mode(&self) -> DataTransferMode {
+        self.mode.borrow().clone()
+    }
+
+    // TODO Set the mode according to the event associated with the item list
+    #[allow(dead_code)]
+    pub fn set_mode(&self, mode: DataTransferMode) {
+        *self.mode.borrow_mut() = mode;
     }
 }
 
@@ -160,16 +181,14 @@ impl DataTransferItemList {
 impl DataTransferItemListMethods for DataTransferItemList {
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-add
     fn Add(&self, data: DOMString, type_: DOMString) -> Fallible<Option<DomRoot<DataTransferItem>>> {
-        warn!("ADDING A STRING ===== {:?} | {:?}", data, type_);
-
         // Step 1
-        if self.mode != DataTransferMode::ReadWrite {
+        if self.get_mode() != DataTransferMode::ReadWrite {
             return Ok(None);
         }
 
         // Step 2.1
         if self.list.borrow().iter().find(
-            |x| *x.type_() == type_.clone().to_ascii_lowercase().as_str().to_owned()
+            |x| *x.type_() == type_.to_ascii_lowercase()
         ).is_some() {
             return Err(Error::NotSupported);
         }
@@ -187,10 +206,8 @@ impl DataTransferItemListMethods for DataTransferItemList {
 
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-add
     fn Add_(&self, data: &File) -> Fallible<Option<DomRoot<DataTransferItem>>> {
-        warn!("ADDING A FILE ===== {:?} | {:?}", data.name(), data.type_string());
-
         // Step 1
-        if self.mode != DataTransferMode::ReadWrite {
+        if self.get_mode() != DataTransferMode::ReadWrite {
             return Ok(None);
         }
 
@@ -207,7 +224,7 @@ impl DataTransferItemListMethods for DataTransferItemList {
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-remove
     fn Remove(&self, index: u32) -> Fallible<()> {
         // Step 1
-        if self.mode != DataTransferMode::ReadWrite {
+        if self.get_mode() != DataTransferMode::ReadWrite {
             return Err(Error::InvalidState);
         }
 
@@ -225,8 +242,8 @@ impl DataTransferItemListMethods for DataTransferItemList {
 
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-clear
     fn Clear(&self) {
-        if self.mode == DataTransferMode::ReadWrite {
-            // Avoid regenerating the internal types cache key when the item list is already empty
+        if self.get_mode() == DataTransferMode::ReadWrite {
+            // Avoid regenerating the internal types array when the item list is already empty
             if !self.list.borrow().is_empty() {
                 self.list.borrow_mut().clear();
                 self.regenerate_types();
