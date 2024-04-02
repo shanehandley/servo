@@ -2,22 +2,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use dom_struct::dom_struct;
-
-use js::jsapi::Heap;
-use js::rust::HandleObject;
-use js::jsval::JSVal;
-
 use std::cell::Cell;
 
-use crate::dom::bindings::codegen::Bindings::DataTransferBinding::{DataTransferMethods, DropEffect, EffectAllowed};
-use crate::dom::bindings::reflector::{DomObject, Reflector, reflect_dom_object_with_proto};
+use dom_struct::dom_struct;
+use js::jsapi::Heap;
+use js::jsval::JSVal;
+use js::rust::HandleObject;
+
+use crate::dom::bindings::codegen::Bindings::DataTransferBinding::{
+    DataTransferMethods, DropEffect, EffectAllowed,
+};
 use crate::dom::bindings::inheritance::Castable;
+use crate::dom::bindings::reflector::{reflect_dom_object_with_proto, DomObject, Reflector};
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::bindings::utils::to_frozen_array;
 use crate::dom::datatransferitem::DataTransferItemValue;
-use crate::dom::datatransferitemlist::{DataTransferMode, DataTransferItemList};
+use crate::dom::datatransferitemlist::{DataTransferItemList, DataTransferMode};
 use crate::dom::element::Element;
 use crate::dom::filelist::FileList;
 use crate::dom::htmlimageelement::HTMLImageElement;
@@ -31,7 +32,7 @@ use crate::test::DomRefCell;
 struct DataTransferBitmap {
     image: DomRoot<HTMLImageElement>,
     image_x: i32,
-    image_y: i32
+    image_y: i32,
 }
 
 // https://html.spec.whatwg.org/multipage/dnd.html#datatransfer
@@ -56,7 +57,7 @@ impl DataTransfer {
     #[allow(crown::unrooted_must_root)]
     pub fn new_inherited(
         files: DomRoot<FileList>,
-        item_list: DomRoot<DataTransferItemList>
+        item_list: DomRoot<DataTransferItemList>,
     ) -> DataTransfer {
         DataTransfer {
             reflector_: Reflector::new(),
@@ -71,27 +72,17 @@ impl DataTransfer {
     }
 
     #[allow(crown::unrooted_must_root)]
-    fn new_with_proto(
-        global: &Window,
-        proto: Option<HandleObject>,
-    ) -> DomRoot<DataTransfer> {
+    fn new_with_proto(global: &Window, proto: Option<HandleObject>) -> DomRoot<DataTransfer> {
         let files = FileList::new(global, Vec::new());
         let items = DataTransferItemList::new(global, &[]);
 
         let data_transfer = DataTransfer::new_inherited(files, items);
 
-        reflect_dom_object_with_proto(
-            Box::new(data_transfer),
-            global,
-            proto
-        )
+        reflect_dom_object_with_proto(Box::new(data_transfer), global, proto)
     }
 
     #[allow(non_snake_case)]
-    pub fn Constructor(
-        global: &Window,
-        proto: Option<HandleObject>,
-    ) -> DomRoot<DataTransfer> {
+    pub fn Constructor(global: &Window, proto: Option<HandleObject>) -> DomRoot<DataTransfer> {
         DataTransfer::new_with_proto(global, proto)
     }
 }
@@ -140,7 +131,7 @@ impl DataTransferMethods for DataTransfer {
                 *self.bitmap_image.borrow_mut() = Some(DataTransferBitmap {
                     image: DomRoot::from_ref(image_element),
                     image_x: x,
-                    image_y: y
+                    image_y: y,
                 })
             }
         }
@@ -152,7 +143,7 @@ impl DataTransferMethods for DataTransfer {
 
         // Step 2
         if self.item_list.get_mode() == DataTransferMode::Protected {
-            return DOMString::new()
+            return DOMString::new();
         }
 
         let string_format = format.to_ascii_lowercase();
@@ -161,23 +152,21 @@ impl DataTransferMethods for DataTransfer {
         let parsed_format = match string_format.as_str() {
             "text" => "text/plain",
             "url" => "text/uri-list",
-            f => f
+            f => f,
         };
 
-        let value: Option<DataTransferItemValue> = self.item_list.get_string_value_by_format(
-            DOMString::from(parsed_format)
-        );
+        let value: Option<DataTransferItemValue> = self
+            .item_list
+            .get_string_value_by_format(DOMString::from(parsed_format));
 
         // Step 7
         if value.is_none() {
-            return DOMString::new()
+            return DOMString::new();
         }
 
         // Step 8, 9, & 10
         match (value, parsed_format) {
-            (Some(DataTransferItemValue::String(val)), "text/uri-list") => {
-                val
-            },
+            (Some(DataTransferItemValue::String(val)), "text/uri-list") => val,
             (Some(DataTransferItemValue::String(val)), _) => val,
             _ => DOMString::new(),
         }
@@ -197,12 +186,14 @@ impl DataTransferMethods for DataTransfer {
             match format.to_ascii_lowercase().as_str() {
                 "text" => "text/plain",
                 "url" => "text/uri-list",
-                f => f
-            }.to_owned()
+                f => f,
+            }
+            .to_owned(),
         );
 
         // Step 5
-        self.item_list.remove_string_entries_by_format(&parsed_format);
+        self.item_list
+            .remove_string_entries_by_format(&parsed_format);
 
         // Step 6
         let _ = self.item_list.add_string(data, parsed_format);
@@ -224,23 +215,24 @@ impl DataTransferMethods for DataTransfer {
             },
             // Step 4 & 5
             Some(s) => {
-                let parsed_format = DOMString::from_string(match s.to_ascii_lowercase().as_str() {
-                    "text" => "text/plain",
-                    "url" => "text/uri-list",
-                    f => f
-                }.to_owned());
+                let parsed_format = DOMString::from_string(
+                    match s.to_ascii_lowercase().as_str() {
+                        "text" => "text/plain",
+                        "url" => "text/uri-list",
+                        f => f,
+                    }
+                    .to_owned(),
+                );
 
-                self.item_list.remove_string_entries_by_format(&parsed_format);
-            }
+                self.item_list
+                    .remove_string_entries_by_format(&parsed_format);
+            },
         }
     }
 
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-files>
     fn Files(&self) -> DomRoot<FileList> {
-        FileList::new(
-            &self.global().as_window(),
-            self.item_list.get_files()
-        )
+        FileList::new(&self.global().as_window(), self.item_list.get_files())
     }
 
     // <https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-types>

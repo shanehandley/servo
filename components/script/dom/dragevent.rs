@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
- use dom_struct::dom_struct;
- use js::rust::HandleObject;
- use servo_atoms::Atom;
- 
-use crate::dom::bindings::codegen::Bindings::MouseEventBinding::MouseEventMethods;
+use dom_struct::dom_struct;
+use js::rust::HandleObject;
+use servo_atoms::Atom;
+
 use crate::dom::bindings::codegen::Bindings::DragEventBinding::{DragEventInit, DragEventMethods};
+use crate::dom::bindings::codegen::Bindings::MouseEventBinding::MouseEventMethods;
 use crate::dom::bindings::error::Fallible;
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::reflector::{reflect_dom_object, reflect_dom_object_with_proto};
@@ -25,24 +25,17 @@ pub struct DragEvent {
 }
 
 impl DragEvent {
-    pub fn new_uninitialized(
-        global: &Window,
-    ) -> DomRoot<DragEvent> {
-        reflect_dom_object(
-            Box::new(DragEvent::new_inherited(None)),
-            global,
-        )
+    pub fn new_uninitialized(global: &Window) -> DomRoot<DragEvent> {
+        reflect_dom_object(Box::new(DragEvent::new_inherited(None)), global)
     }
 
     fn new_inherited(init: Option<&DragEventInit>) -> DragEvent {
         // <https://html.spec.whatwg.org/multipage/dnd.html#drageventinit>
-        let data_transfer = init.unwrap_or(
-            &DragEventInit::empty()
-        ).dataTransfer.clone();
+        let data_transfer = init.unwrap_or(&DragEventInit::empty()).dataTransfer.clone();
 
         DragEvent {
             mouseevent: MouseEvent::new_inherited(),
-            data_transfer
+            data_transfer,
         }
     }
 
@@ -50,12 +43,12 @@ impl DragEvent {
         global: &Window,
         proto: Option<HandleObject>,
         type_: DOMString,
-        init: &DragEventInit
+        init: &DragEventInit,
     ) -> DomRoot<DragEvent> {
         let ev = reflect_dom_object_with_proto(
             Box::new(DragEvent::new_inherited(Some(init))),
             global,
-            proto
+            proto,
         );
 
         {
@@ -71,14 +64,9 @@ impl DragEvent {
         global: &Window,
         proto: Option<HandleObject>,
         type_: DOMString,
-        init: &DragEventInit
+        init: &DragEventInit,
     ) -> Fallible<DomRoot<DragEvent>> {
-        let event = DragEvent::new_with_proto(
-            global,
-            proto,
-            type_,
-            init
-        );
+        let event = DragEvent::new_with_proto(global, proto, type_, init);
 
         Ok(event)
     }

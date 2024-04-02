@@ -100,7 +100,6 @@ use crate::dom::bindings::refcounted::{Trusted, TrustedPromise};
 use crate::dom::bindings::reflector::{reflect_dom_object_with_proto, DomObject};
 use crate::dom::bindings::root::{Dom, DomRoot, DomSlice, LayoutDom, MutNullableDom};
 use crate::dom::bindings::str::{DOMString, USVString};
-use crate::dom::bindings::trace::{HashMapTracedValues, NoTrace};
 use crate::dom::bindings::xmlname::XMLName::Invalid;
 use crate::dom::bindings::xmlname::{
     namespace_from_domstring, validate_and_extract, xml_name_type,
@@ -4574,9 +4573,7 @@ impl DocumentMethods for Document {
                 self.window.upcast(),
             ))),
             // FIXME(#25136): devicemotionevent, deviceorientationevent
-            "dragevent" => Ok(DomRoot::upcast(DragEvent::new_uninitialized(
-                &self.window
-            ))),
+            "dragevent" => Ok(DomRoot::upcast(DragEvent::new_uninitialized(&self.window))),
             "events" | "event" | "htmlevents" | "svgevents" => {
                 Ok(Event::new_uninitialized(self.window.upcast()))
             },

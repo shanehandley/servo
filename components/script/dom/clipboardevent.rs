@@ -5,9 +5,11 @@
 use dom_struct::dom_struct;
 use js::rust::HandleObject;
 use servo_atoms::Atom;
- 
+
+use crate::dom::bindings::codegen::Bindings::ClipboardEventBinding::{
+    ClipboardEventInit, ClipboardEventMethods,
+};
 use crate::dom::bindings::codegen::Bindings::EventBinding::Event_Binding::EventMethods;
-use crate::dom::bindings::codegen::Bindings::ClipboardEventBinding::{ClipboardEventInit, ClipboardEventMethods};
 use crate::dom::bindings::error::Fallible;
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::reflector::{reflect_dom_object, reflect_dom_object_with_proto};
@@ -25,24 +27,20 @@ pub struct ClipboardEvent {
 }
 
 impl ClipboardEvent {
-    pub fn new_uninitialized(
-        global: &Window,
-    ) -> DomRoot<ClipboardEvent> {
-        reflect_dom_object(
-            Box::new(ClipboardEvent::new_inherited(None)),
-            global,
-        )
+    pub fn new_uninitialized(global: &Window) -> DomRoot<ClipboardEvent> {
+        reflect_dom_object(Box::new(ClipboardEvent::new_inherited(None)), global)
     }
 
     fn new_inherited(init: Option<&ClipboardEventInit>) -> ClipboardEvent {
         // <https://w3c.github.io/clipboard-apis/#clipboardevent>
-        let clipboard_data = init.unwrap_or(
-            &ClipboardEventInit::empty()
-        ).clipboardData.clone();
+        let clipboard_data = init
+            .unwrap_or(&ClipboardEventInit::empty())
+            .clipboardData
+            .clone();
 
         ClipboardEvent {
             event: Event::new_inherited(),
-            clipboard_data
+            clipboard_data,
         }
     }
 
@@ -50,12 +48,12 @@ impl ClipboardEvent {
         global: &Window,
         proto: Option<HandleObject>,
         type_: DOMString,
-        init: &ClipboardEventInit
+        init: &ClipboardEventInit,
     ) -> DomRoot<ClipboardEvent> {
         let ev = reflect_dom_object_with_proto(
             Box::new(ClipboardEvent::new_inherited(Some(init))),
             global,
-            proto
+            proto,
         );
 
         {
@@ -71,14 +69,9 @@ impl ClipboardEvent {
         global: &Window,
         proto: Option<HandleObject>,
         type_: DOMString,
-        init: &ClipboardEventInit
+        init: &ClipboardEventInit,
     ) -> Fallible<DomRoot<ClipboardEvent>> {
-        let event = ClipboardEvent::new_with_proto(
-            global,
-            proto,
-            type_,
-            init
-        );
+        let event = ClipboardEvent::new_with_proto(global, proto, type_, init);
 
         Ok(event)
     }

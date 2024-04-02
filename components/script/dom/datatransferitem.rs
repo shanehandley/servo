@@ -6,16 +6,15 @@ use std::rc::Rc;
 
 use dom_struct::dom_struct;
 
+use super::file::File;
+use crate::dom::bindings::callback::ExceptionHandling;
 use crate::dom::bindings::codegen::Bindings::DataTransferItemBinding::{
     DataTransferItemMethods, FunctionStringCallback,
 };
-use crate::dom::bindings::callback::ExceptionHandling;
-use crate::dom::bindings::reflector::{Reflector, reflect_dom_object};
+use crate::dom::bindings::reflector::{reflect_dom_object, Reflector};
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::window::Window;
-
-use super::file::File;
 
 #[derive(Clone, JSTraceable, MallocSizeOf)]
 pub enum DataTransferItemValue {
@@ -32,12 +31,16 @@ pub struct DataTransferItem {
 }
 
 impl DataTransferItem {
-    fn new_inherited(kind: DOMString, type_: DOMString, value: DataTransferItemValue) -> DataTransferItem {
+    fn new_inherited(
+        kind: DOMString,
+        type_: DOMString,
+        value: DataTransferItemValue,
+    ) -> DataTransferItem {
         DataTransferItem {
             reflector_: Reflector::new(),
             kind,
             type_,
-            value
+            value,
         }
     }
 
@@ -45,12 +48,10 @@ impl DataTransferItem {
         window: &Window,
         kind: DOMString,
         type_: DOMString,
-        value: DataTransferItemValue
+        value: DataTransferItemValue,
     ) -> DomRoot<DataTransferItem> {
         reflect_dom_object(
-            Box::new(DataTransferItem::new_inherited(
-                kind, type_, value
-            )),
+            Box::new(DataTransferItem::new_inherited(kind, type_, value)),
             window,
         )
     }
@@ -70,17 +71,17 @@ impl DataTransferItem {
     pub fn get_as_file(&self) -> Option<DomRoot<File>> {
         match &self.value {
             DataTransferItemValue::File(f) => Some(f.clone()),
-            _ => None
+            _ => None,
         }
     }
-
 }
 
 #[allow(non_snake_case)]
 impl DataTransferItemMethods for DataTransferItem {
     // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitem-getasstring
     fn GetAsString(&self, callback: Option<Rc<FunctionStringCallback>>) {
-        if let (Some(callback), &DataTransferItemValue::String(ref text)) = (callback, &self.value) {
+        if let (Some(callback), &DataTransferItemValue::String(ref text)) = (callback, &self.value)
+        {
             let _ = callback.Call__(text.clone(), ExceptionHandling::Report);
         }
     }
