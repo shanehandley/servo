@@ -1192,13 +1192,6 @@ impl HTMLInputElementMethods for HTMLInputElement {
         }
     }
 
-    // https://html.spec.whatwg.org/multipage/#dom-input-files
-    fn SetFiles(&self, files: Option<&FileList>) {
-        if files.is_some() {
-            self.filelist.set(files);
-        }
-    }
-
     // https://html.spec.whatwg.org/multipage/#dom-input-defaultchecked
     make_bool_getter!(DefaultChecked, "checked");
 
