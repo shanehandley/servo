@@ -339,7 +339,7 @@ pub struct Document {
     /// <http://w3c.github.io/touch-events/#dfn-active-touch-point>
     active_touch_points: DomRefCell<Vec<Dom<Touch>>>,
     /// Navigation Timing properties:
-    /// <https://w3c.github.io/navigation-timing/#sec-PerformanceNavigationTiming>
+    /// <https://html.spec.whatwg.org/multipage/dom.html#document-load-timing-info>
     dom_loading: Cell<u64>,
     dom_interactive: Cell<u64>,
     dom_content_loaded_event_start: Cell<u64>,
@@ -348,6 +348,7 @@ pub struct Document {
     top_level_dom_complete: Cell<u64>,
     load_event_start: Cell<u64>,
     load_event_end: Cell<u64>,
+    /// <https://html.spec.whatwg.org/multipage/dom.html#document-unload-timing-info>
     unload_event_start: Cell<u64>,
     unload_event_end: Cell<u64>,
     /// <https://html.spec.whatwg.org/multipage/#concept-document-https-state>

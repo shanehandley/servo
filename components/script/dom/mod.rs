@@ -470,6 +470,8 @@ pub mod navigatorinfo;
 pub mod node;
 pub mod nodeiterator;
 pub mod nodelist;
+pub mod notrestoredreasondetails;
+pub mod notrestoredreasons;
 pub mod offlineaudiocompletionevent;
 pub mod offlineaudiocontext;
 pub mod offscreencanvas;
