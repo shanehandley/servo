@@ -575,6 +575,7 @@ pub mod treewalker;
 pub mod uievent;
 pub mod url;
 pub mod urlhelper;
+pub mod urlpattern;
 pub mod urlsearchparams;
 pub mod userscripts;
 pub mod validation;
