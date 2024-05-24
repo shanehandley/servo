@@ -222,6 +222,36 @@ pub async fn main_fetch(
     }
 
     // Step 2.2.
+    if let Some(csp_list) = request.csp_list.clone() {
+        let origin = match &request.origin {
+            Origin::Origin(origin) => origin,
+            Origin::Client => panic!("I DONT KNOWW"),
+        };
+
+        let csp_request = csp::Request {
+            url: request.url().into_url(),
+            origin: origin.clone().into_url_origin(),
+            redirect_count: request.redirect_count,
+            destination: request.destination,
+            initiator: csp::Initiator::None,
+            nonce: String::new(),
+            integrity_metadata: request.integrity_metadata.clone(),
+            parser_metadata: csp::ParserMetadata::None,
+        };
+
+        let violations = csp_list.report_violations_for_request(&csp_request);
+
+        match csp_list.should_request_be_blocked(&csp_request) {
+            (csp::CheckResult::Blocked, _) => {
+                warn!("Request blocked by CSP");
+                response = Some(Response::network_error(NetworkError::Internal(
+                    "Blocked by Content-Security-Policy".into(),
+                )))
+            },
+            _ => {},
+        }
+    }
+
     // TODO: Report violations.
 
     // Step 2.4.
