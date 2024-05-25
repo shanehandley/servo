@@ -199,7 +199,7 @@ pub async fn main_fetch(
     done_chan: &mut DoneChannel,
     context: &FetchContext,
 ) -> Response {
-    // Step 1.
+    // Step 2.
     let mut response = None;
 
     // Servo internal: return a crash error when a crash error page is needed
@@ -209,7 +209,7 @@ pub async fn main_fetch(
         )));
     }
 
-    // Step 2.
+    // Step 3.
     if request.local_urls_only &&
         !matches!(
             request.current_url().scheme(),
@@ -221,7 +221,7 @@ pub async fn main_fetch(
         )));
     }
 
-    // Step 2.2.
+    // Step 4.
     if let Some(csp_list) = request.csp_list.clone() {
         let origin = match &request.origin {
             Origin::Origin(origin) => origin,
@@ -233,13 +233,41 @@ pub async fn main_fetch(
             origin: origin.clone().into_url_origin(),
             redirect_count: request.redirect_count,
             destination: request.destination,
-            initiator: csp::Initiator::None,
+            initiator: csp::Initiator::None, // TODO
             nonce: String::new(),
             integrity_metadata: request.integrity_metadata.clone(),
             parser_metadata: csp::ParserMetadata::None,
         };
 
         let violations = csp_list.report_violations_for_request(&csp_request);
+
+        // https://w3c.github.io/webappsec-csp/#report-violation
+        if !violations.is_empty() {
+            violations.iter().for_each(|_violation| {
+                // 1: Let global be violation’s global object.
+
+                // 2: Let target be violation’s element.
+
+                // 3: Queue a task to run the following steps:
+
+                // 3.1: If target is not null, and global is a Window, and target’s shadow-including
+                // root is not global’s associated Document, set target to null.
+                let _current_url = request.current_url();
+
+                // 3.2: If target is null:
+
+                // 3.2.1: Set target to violation’s global object.
+                // 3.2.2: If target is a Window, set target to target’s associated Document.
+
+                // 3.3: If target implements EventTarget, fire an event named
+                // securitypolicyviolation that uses the SecurityPolicyViolationEvent interface at
+                // target with its attributes initialized as follows...
+
+                // let event = SecurityPolicyViolationEvent::new_inherited();
+
+                // This needs to be some sort of constellation message which will trigger this flow...
+            })
+        }
 
         match csp_list.should_request_be_blocked(&csp_request) {
             (csp::CheckResult::Blocked, _) => {
