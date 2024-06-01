@@ -498,8 +498,6 @@ impl HTMLElementMethods for HTMLElement {
             .layout()
             .query_element_outer_text(node.to_trusted_node_address());
 
-        warn!("OuterText::results: {:?}", text);
-
         Ok(DOMString::from(text))
     }
 
@@ -712,46 +710,6 @@ fn to_camel_case(name: &str) -> Option<DOMString> {
 }
 
 impl HTMLElement {
-    /// <https://html.spec.whatwg.org/multipage/dom.html#merge-with-the-next-text-node>
-    fn merge_with_the_next_text_node(&self, node: DomRoot<Node>) {
-        // Step 1: Let next be node's next sibling.
-        if let Some(next) = node.GetNextSibling() {
-            // Step 2: If next is not a Text node, then return.
-            if next.is::<Text>() {
-                // Step 3: Replace data with node, node's data's length, 0, and next's data.
-                // let offset_count = next.len();
-                let nodes_data = node.downcast::<CharacterData>().unwrap();
-
-                let nexts_data = next.downcast::<CharacterData>().unwrap();
-                let data_data = nexts_data.data().clone();
-
-                // warn!("merge_with_the_next_text_node::DATA: {:?}, length: {:?}", data.data(), data.Length());
-
-                match nodes_data.ReplaceData(nodes_data.Length(), 0, data_data) {
-                    Err(error) => {
-                        warn!("ReplaceData failed: {:?}", error);
-                    },
-                    _ => {}
-                }
-
-                // node.ranges().replace_code_units(&node, 0, offset_count, data.Length());
-
-                // Step 4: If next's parent is non-null, then remove next.
-                if next.has_parent() {
-                    warn!("Next has a parent, removing...");
-
-                    next.remove_self();
-                } else {
-                    warn!("merge_with_the_next_text_node::Next does not have a parent");
-                }
-            } else {
-                warn!("merge_with_the_next_text_node::next is not text");
-            }
-        } else {
-            warn!("merge_with_the_next_text_node::no result for GetNextSibling");
-        }
-    }
-
     pub fn set_custom_attr(&self, name: DOMString, value: DOMString) -> ErrorResult {
         if name
             .chars()
@@ -1026,12 +984,34 @@ impl HTMLElement {
         // If text is not the empty string, then append a new Text node whose data is text and node
         // document is document to fragment.
         if !text.is_empty() {
-            warn!("Text is: {:?}", text.clone());
-
             append_text_node_to_fragment(&document, &fragment, text);
         }
 
         fragment
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/dom.html#merge-with-the-next-text-node>
+    fn merge_with_the_next_text_node(&self, node: DomRoot<Node>) {
+        // Step 1: Let next be node's next sibling.
+        if let Some(next) = node.GetNextSibling() {
+            // Step 2: If next is not a Text node, then return.
+            if next.is::<Text>() {
+                // Step 3: Replace data with node, node's data's length, 0, and next's data.
+                let node_chars = node.downcast::<CharacterData>().unwrap();
+                let next_chars = next.downcast::<CharacterData>().unwrap();
+
+                if let Err(error) = node_chars.ReplaceData(node_chars.Length(), 0, next_chars.Data()) {
+                    warn!("Failed to replace character data: {:?}", error);
+
+                    return;
+                }
+
+                // Step 4: If next's parent is non-null, then remove next.
+                if next.has_parent() {
+                    next.remove_self();
+                }
+            }
+        }
     }
 }
 

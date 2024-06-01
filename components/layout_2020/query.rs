@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Utilities for querying the layout, as needed by layout.
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use app_units::Au;
@@ -515,10 +516,16 @@ pub fn process_element_outer_text_query<'dom>(node: impl LayoutNode<'dom>) -> St
 
 /// <https://html.spec.whatwg.org/multipage/dom.html#get-the-text-steps>
 fn get_the_text_steps<'dom>(node: impl LayoutNode<'dom>) -> String {
-    let rendered_text = rendered_text_selection_steps(node);
+    // Step 1: If element is not being rendered or if the user agent is a non-CSS user agent, then
+    // return element's descendant text content.
+    // TODO
+
+    // Step 2: Let results be a new empty list.
+    let mut result = Vec::new();
+
+    let rendered_text = rendered_text_collection_steps(node);
 
     let mut max_req_line_break_count = 0;
-    let mut inner_text = Vec::new();
 
     for item in rendered_text {
         match item {
@@ -526,24 +533,24 @@ fn get_the_text_steps<'dom>(node: impl LayoutNode<'dom>) -> String {
                 if max_req_line_break_count > 0 {
                     // Step 5.
                     for _ in 0..max_req_line_break_count {
-                        inner_text.push("\u{000A}".to_owned());
+                        result.push("\u{000A}".to_owned());
                     }
                     max_req_line_break_count = 0;
                 }
                 // Step 3.
                 if !s.is_empty() {
-                    inner_text.push(s.to_owned());
+                    result.push(s.to_owned());
                 }
             },
             InnerOrOuterTextItem::RequiredLineBreakCount(count) => {
                 // Step 4.
-                if inner_text.is_empty() {
+                if result.is_empty() {
                     // Remove required line break count at the start.
                     continue;
                 }
-                // Store the count if it's the max of this run,
-                // but it may be ignored if no text item is found afterwards,
-                // which means that these are consecutive line breaks at the end.
+                // Store the count if it's the max of this run, but it may be ignored if no text
+                // item is found afterwards, which means that these are consecutive line breaks at
+                // the end.
                 if count > max_req_line_break_count {
                     max_req_line_break_count = count;
                 }
@@ -551,7 +558,7 @@ fn get_the_text_steps<'dom>(node: impl LayoutNode<'dom>) -> String {
         }
     }
 
-    inner_text.into_iter().collect()
+    result.into_iter().collect()
 }
 
 enum InnerOrOuterTextItem {
@@ -559,11 +566,10 @@ enum InnerOrOuterTextItem {
     RequiredLineBreakCount(u32),
 }
 
-/// <https://html.spec.whatwg.org/#get-the-text-steps>
-fn rendered_text_selection_steps<'dom>(node: impl LayoutNode<'dom>) -> Vec<InnerOrOuterTextItem> {
+/// <https://html.spec.whatwg.org/#rendered-text-collection-steps>
+fn rendered_text_collection_steps<'dom>(node: impl LayoutNode<'dom>) -> Vec<InnerOrOuterTextItem> {
     // Step 2: Let results be a new empty list.
     let mut results = Vec::new();
-    // let mut results: Vec<String> = Vec::new();
 
     // Step 3: For each child node node of element run:
     // <https://html.spec.whatwg.org/#rendered-text-collection-steps>
@@ -610,10 +616,10 @@ fn rendered_text_selection_steps<'dom>(node: impl LayoutNode<'dom>) -> Vec<Inner
                 // rules are slightly modified: collapsible spaces at the end of lines are always
                 // collapsed, but they are only removed if the line is the last line of the block,
                 // or it ends with a br element. Soft hyphens should be preserved.
-                let text_content = child.to_threadsafe().node_text_content();
+                let text_content: Cow<'dom, str> = child.to_threadsafe().node_text_content();
 
                 results.push(InnerOrOuterTextItem::Text(
-                    text_content.to_ascii_lowercase(),
+                    text_content.trim().into(),
                 ));
             },
             LayoutNodeType::Element(LayoutElementType::HTMLBRElement) => {
