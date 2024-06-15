@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use content_security_policy::Destination;
 use dom_struct::dom_struct;
 use js::rust::HandleObject;
 use servo_atoms::Atom;
@@ -28,7 +29,6 @@ pub struct SecurityPolicyViolationEvent {
     referrer: USVString,
     disposition: SecurityPolicyViolationEventDisposition,
     effective_directive: DOMString,
-    violated_directive: DOMString,
     original_policy: DOMString,
     line_number: u32,
     column_number: u32,
@@ -44,7 +44,6 @@ impl SecurityPolicyViolationEvent {
         referrer: USVString,
         disposition: SecurityPolicyViolationEventDisposition,
         effective_directive: DOMString,
-        violated_directive: DOMString,
         original_policy: DOMString,
         line_number: u32,
         column_number: u32,
@@ -59,24 +58,35 @@ impl SecurityPolicyViolationEvent {
             referrer,
             disposition,
             effective_directive,
-            violated_directive,
             original_policy,
             line_number,
             column_number,
             status_code,
             sample,
-            source_file
+            source_file,
         }
     }
 
-    // pub fn new(
-    //     global: &GlobalScope,
-    //     type_: Atom,
-    //     bubbles: bool,
-    //     cancelable: bool,
-    // ) -> DomRoot<SecurityPolicyViolationEvent> {
-    //     Self::new_with_proto(global, None, type_, bubbles, cancelable)
-    // }
+    pub fn new(
+        global: &GlobalScope,
+        type_: Atom,
+        bubbles: bool,
+        cancelable: bool,
+        url: ServoUrl,
+        destination: Destination,
+    ) -> DomRoot<SecurityPolicyViolationEvent> {
+        let mut init = SecurityPolicyViolationEventInit::empty();
+
+        init.documentURI = strip_url_for_use_in_reports(url).into();
+
+        if destination == Destination::Script {
+            init.effectiveDirective = DOMString::from("script-src-elem".to_owned());
+        }
+
+        init.violatedDirective = init.effectiveDirective.clone();
+
+        Self::new_with_proto(global, None, type_, bubbles, cancelable, &init)
+    }
 
     fn new_with_proto(
         global: &GlobalScope,
@@ -93,7 +103,6 @@ impl SecurityPolicyViolationEvent {
                 init.referrer.clone(),
                 init.disposition,
                 init.effectiveDirective.clone(),
-                init.violatedDirective.clone(),
                 init.originalPolicy.clone(),
                 init.lineNumber,
                 init.columnNumber,
@@ -128,28 +137,9 @@ impl SecurityPolicyViolationEvent {
         )
     }
 
-    /// <https://w3c.github.io/webappsec-csp/#strip-url-for-use-in-reports>
-    fn strip_url_for_use_in_reports(&self, mut url: ServoUrl) -> String {
-        // If url’s scheme is not an HTTP(S) scheme, then return url’s scheme.
-        if url.is_secure_scheme() {
-            return String::from(url.scheme());
-        }
-
-        let (_, _, _) = (
-            url.set_fragment(None),
-            url.set_username(""),
-            url.set_password(None),
-        );
-
-        // 5: Return the result of executing the URL serializer on url.
-        // https://url.spec.whatwg.org/#concept-url-serializer
-
-        url.into_string()
-    }
-
     fn parse_property(&self, property: &USVString) -> USVString {
         if let Ok(url) = ServoUrl::parse(property) {
-            let stripped_url = self.strip_url_for_use_in_reports(url);
+            let stripped_url = strip_url_for_use_in_reports(url);
 
             return USVString::from(stripped_url);
         }
@@ -160,10 +150,12 @@ impl SecurityPolicyViolationEvent {
 
 #[allow(non_snake_case)]
 impl SecurityPolicyViolationEventMethods for SecurityPolicyViolationEvent {
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-documenturi>
     fn DocumentURI(&self) -> USVString {
         self.parse_property(&self.document_uri)
     }
 
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-referrer>
     fn Referrer(&self) -> USVString {
         self.parse_property(&self.referrer)
     }
@@ -178,39 +170,67 @@ impl SecurityPolicyViolationEventMethods for SecurityPolicyViolationEvent {
         self.effective_directive.clone()
     }
 
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-violateddirective>
     fn ViolatedDirective(&self) -> DOMString {
-        self.violated_directive.clone()
+        self.effective_directive.clone()
     }
 
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-originalpolicy>
     fn OriginalPolicy(&self) -> DOMString {
         self.original_policy.clone()
     }
 
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-sourcefile>
     fn SourceFile(&self) -> USVString {
         self.source_file.clone()
     }
 
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-sample>
     fn Sample(&self) -> DOMString {
         self.sample.clone()
     }
 
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-disposition>
     fn Disposition(&self) -> SecurityPolicyViolationEventDisposition {
         self.disposition
     }
 
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-statuscode>
     fn StatusCode(&self) -> u16 {
         self.status_code
     }
 
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-linenumber>
     fn LineNumber(&self) -> u32 {
         self.line_number
     }
 
+    /// <https://w3c.github.io/webappsec-csp/#ref-for-dom-securitypolicyviolationevent-columnnumber>
     fn ColumnNumber(&self) -> u32 {
         self.column_number
     }
 
+    /// <https://dom.spec.whatwg.org/#dom-event-istrusted>
     fn IsTrusted(&self) -> bool {
         self.event.IsTrusted()
     }
+}
+
+/// <https://w3c.github.io/webappsec-csp/#strip-url-for-use-in-reports>
+fn strip_url_for_use_in_reports(mut url: ServoUrl) -> String {
+    // If url’s scheme is not an HTTP(S) scheme, then return url’s scheme.
+    if url.is_secure_scheme() {
+        return String::from(url.scheme());
+    }
+
+    let (_, _, _) = (
+        url.set_fragment(None),
+        url.set_username(""),
+        url.set_password(None),
+    );
+
+    // 5: Return the result of executing the URL serializer on url.
+    // https://url.spec.whatwg.org/#concept-url-serializer
+
+    url.into_string()
 }

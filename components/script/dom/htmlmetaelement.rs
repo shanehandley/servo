@@ -4,6 +4,7 @@
 
 use std::str::FromStr;
 
+use content_security_policy::{CspList, PolicyDisposition, PolicySource};
 use dom_struct::dom_struct;
 use html5ever::{LocalName, Prefix};
 use js::rust::HandleObject;
@@ -92,6 +93,9 @@ impl HTMLMetaElement {
                 "refresh" => {
                     self.declarative_refresh();
                 },
+                "content-security-policy" => {
+                    self.apply_content_security_policy();
+                },
                 _ => {},
             }
         }
@@ -116,6 +120,26 @@ impl HTMLMetaElement {
                 head.set_document_referrer();
             }
         }
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#attr-meta-http-equiv-content-security-policy>
+    fn apply_content_security_policy(&self) {
+        let content = self.Content();
+
+        // Step 3: Let policy be the result of executing Content Security Policy's parse a
+        // serialized Content Security Policy algorithm on the meta element's content attribute's
+        // value, with a source of "meta", and a disposition of "enforce".
+        let policy = CspList::parse(&content, PolicySource::Meta, PolicyDisposition::Enforce);
+
+        // Step 4: Remove all occurrences of the report-uri, frame-ancestors, and sandbox directives
+        // from policy.
+        // TODO
+
+        // Step 5: Enforce the policy.
+        let document = document_from_node(self);
+
+        // TODO: Check whether a csp list exists first, and append if so
+        document.set_csp_list(Some(policy));
     }
 
     /// <https://html.spec.whatwg.org/multipage/#shared-declarative-refresh-steps>
@@ -224,6 +248,7 @@ impl HTMLMetaElementMethods for HTMLMetaElement {
 
     // https://html.spec.whatwg.org/multipage/#dom-meta-httpequiv
     make_getter!(HttpEquiv, "http-equiv");
+
     // https://html.spec.whatwg.org/multipage/#dom-meta-httpequiv
     make_atomic_setter!(SetHttpEquiv, "http-equiv");
 }
