@@ -165,30 +165,6 @@ pub async fn fetch_with_cors_cache(
     main_fetch(request, cache, false, false, target, &mut None, context).await;
 }
 
-/// <https://www.w3.org/TR/CSP/#should-block-request>
-pub fn should_request_be_blocked_by_csp(request: &Request) -> csp::CheckResult {
-    let origin = match &request.origin {
-        Origin::Client => return csp::CheckResult::Allowed,
-        Origin::Origin(origin) => origin,
-    };
-    let csp_request = csp::Request {
-        url: request.url().into_url(),
-        origin: origin.clone().into_url_origin(),
-        redirect_count: request.redirect_count,
-        destination: request.destination,
-        initiator: csp::Initiator::None,
-        nonce: String::new(),
-        integrity_metadata: request.integrity_metadata.clone(),
-        parser_metadata: csp::ParserMetadata::None,
-    };
-    // TODO: Instead of ignoring violations, report them.
-    request
-        .csp_list
-        .as_ref()
-        .map(|c| c.should_request_be_blocked(&csp_request).0)
-        .unwrap_or(csp::CheckResult::Allowed)
-}
-
 /// [Main fetch](https://fetch.spec.whatwg.org/#concept-main-fetch)
 pub async fn main_fetch(
     request: &mut Request,
@@ -209,7 +185,8 @@ pub async fn main_fetch(
         )));
     }
 
-    // Step 3.
+    // Step 3: If request’s local-URLs-only flag is set and request’s current URL is not local, then
+    // set response to a network error.
     if request.local_urls_only &&
         !matches!(
             request.current_url().scheme(),
@@ -221,73 +198,42 @@ pub async fn main_fetch(
         )));
     }
 
-    // Step 4.
-    if let Some(csp_list) = request.csp_list.clone() {
-        let origin = match &request.origin {
-            Origin::Origin(origin) => origin,
-            Origin::Client => panic!("I DONT KNOWW"),
-        };
+    // Step 4: Run report Content Security Policy violations for request.
+    // This also incorporates the CSP aspect of Step 7: Setting the response to a NetworkError
+    if let Some(csp) = request.csp_list.as_ref() {
+        if let Origin::Origin(origin) = &request.origin {
+            let csp_request = csp::Request {
+                url: request.url().into_url(),
+                origin: origin.clone().into_url_origin(),
+                redirect_count: request.redirect_count,
+                destination: request.destination,
+                initiator: csp::Initiator::None, // TODO
+                nonce: String::new(),
+                integrity_metadata: request.integrity_metadata.clone(),
+                parser_metadata: csp::ParserMetadata::None,
+            };
 
-        let csp_request = csp::Request {
-            url: request.url().into_url(),
-            origin: origin.clone().into_url_origin(),
-            redirect_count: request.redirect_count,
-            destination: request.destination,
-            initiator: csp::Initiator::None, // TODO
-            nonce: String::new(),
-            integrity_metadata: request.integrity_metadata.clone(),
-            parser_metadata: csp::ParserMetadata::None,
-        };
+            let report_only_violations = csp.report_violations_for_request(&csp_request);
 
-        let violations = csp_list.report_violations_for_request(&csp_request);
+            // https://w3c.github.io/webappsec-csp/#report-violation
+            if !report_only_violations.is_empty() {
+                // TODO fire SecurityPolicyViolationEvent
+            }
 
-        // https://w3c.github.io/webappsec-csp/#report-violation
-        if !violations.is_empty() {
-            violations.iter().for_each(|_violation| {
-                // 1: Let global be violation’s global object.
+            let (result, violations) = csp.should_request_be_blocked(&csp_request);
 
-                // 2: Let target be violation’s element.
-
-                // 3: Queue a task to run the following steps:
-
-                // 3.1: If target is not null, and global is a Window, and target’s shadow-including
-                // root is not global’s associated Document, set target to null.
-                let _current_url = request.current_url();
-
-                // 3.2: If target is null:
-
-                // 3.2.1: Set target to violation’s global object.
-                // 3.2.2: If target is a Window, set target to target’s associated Document.
-
-                // 3.3: If target implements EventTarget, fire an event named
-                // securitypolicyviolation that uses the SecurityPolicyViolationEvent interface at
-                // target with its attributes initialized as follows...
-
-                // let event = SecurityPolicyViolationEvent::new_inherited();
-
-                // This needs to be some sort of constellation message which will trigger this flow...
-            })
-        }
-
-        match csp_list.should_request_be_blocked(&csp_request) {
-            (csp::CheckResult::Blocked, _) => {
+            if result == csp::CheckResult::Blocked {
                 warn!("Request blocked by CSP");
+
                 response = Some(Response::network_error(NetworkError::Internal(
                     "Blocked by Content-Security-Policy".into(),
-                )))
-            },
-            _ => {},
+                )));
+
+                violations.iter().for_each(|_violation| {
+                    // TODO fire SecurityPolicyViolationEvent
+                });
+            }
         }
-    }
-
-    // TODO: Report violations.
-
-    // Step 2.4.
-    if should_request_be_blocked_by_csp(request) == csp::CheckResult::Blocked {
-        warn!("Request blocked by CSP");
-        response = Some(Response::network_error(NetworkError::Internal(
-            "Blocked by Content-Security-Policy".into(),
-        )))
     }
 
     // Step 3.

@@ -157,6 +157,7 @@ use crate::dom::processinginstruction::ProcessingInstruction;
 use crate::dom::promise::Promise;
 use crate::dom::range::Range;
 use crate::dom::resizeobserver::{ResizeObservationDepth, ResizeObserver};
+use crate::dom::securitypolicyviolationevent::SecurityPolicyViolationEvent;
 use crate::dom::selection::Selection;
 use crate::dom::servoparser::ServoParser;
 use crate::dom::shadowroot::ShadowRoot;
@@ -2092,13 +2093,53 @@ impl Document {
     pub fn fetch_async(
         &self,
         load: LoadType,
-        mut request: RequestBuilder,
+        mut request_builder: RequestBuilder,
         fetch_target: IpcSender<FetchResponseMsg>,
     ) {
-        request.csp_list = self.get_csp_list().map(|x| x.clone());
-        request.https_state = self.https_state.get();
+        let csp_list = self.get_csp_list().map(|x| x.clone());
+
+        let provisional_request = request_builder.clone().build();
+
+        // Maybe don't fetch if we know that CSP will fail?
+        let csp_request = csp::Request {
+            url: request_builder.url.clone().into_url(),
+            origin: request_builder.origin.clone().into_url_origin(),
+            redirect_count: 0,
+            destination: provisional_request.destination,
+            initiator: csp::Initiator::None, // TODO
+            nonce: String::new(),
+            integrity_metadata: provisional_request.integrity_metadata.clone(),
+            parser_metadata: csp::ParserMetadata::None,
+        };
+
+        let (result, violations) = csp_list.map_or((csp::CheckResult::Allowed, Vec::new()), |c| {
+            c.should_request_be_blocked(&csp_request)
+        });
+
+        if result == csp::CheckResult::Blocked {
+            warn!("Request blocked by CSP: {:?}", violations);
+
+            let global = self.window.upcast::<GlobalScope>();
+
+            let event = SecurityPolicyViolationEvent::new(
+                &global,
+                Atom::from("securitypolicyviolation".to_owned()),
+                true,
+                false,
+                provisional_request.url(),
+                provisional_request.destination,
+            );
+
+            event.upcast::<Event>().fire(&self.upcast());
+
+            return;
+        }
+
+        request_builder.csp_list = self.get_csp_list().map(|x| x.clone());
+        request_builder.https_state = self.https_state.get();
         let mut loader = self.loader.borrow_mut();
-        loader.fetch_async(load, request, fetch_target);
+
+        loader.fetch_async(load, request_builder, fetch_target);
     }
 
     // https://html.spec.whatwg.org/multipage/#the-end
@@ -3362,11 +3403,18 @@ impl Document {
                 .get_attribute(&ns!(), &local_name!("nonce"))
                 .map(|attr| Cow::Owned(attr.value().to_string())),
         };
+
         // TODO: Instead of ignoring violations, report them.
         self.get_csp_list()
             .map(|c| {
-                c.should_elements_inline_type_behavior_be_blocked(&element, type_, source)
-                    .0
+                let (result, violations) =
+                    c.should_elements_inline_type_behavior_be_blocked(&element, type_, source);
+
+                if !violations.is_empty() {
+                    // TODO fire SecurityPolicyViolationEvent
+                }
+
+                result
             })
             .unwrap_or(csp::CheckResult::Allowed)
     }
