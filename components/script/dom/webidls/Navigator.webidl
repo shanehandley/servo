@@ -76,3 +76,8 @@ partial interface Navigator {
 interface mixin NavigatorConcurrentHardware {
   readonly attribute unsigned long long hardwareConcurrency;
 };
+
+// https://www.w3.org/TR/beacon/#beacon
+partial interface Navigator {
+    [Throws] boolean sendBeacon(USVString url, optional BodyInit? data = null);
+};
