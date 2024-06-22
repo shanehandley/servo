@@ -2100,7 +2100,6 @@ impl Document {
 
         let provisional_request = request_builder.clone().build();
 
-        // Maybe don't fetch if we know that CSP will fail?
         let csp_request = csp::Request {
             url: request_builder.url.clone().into_url(),
             origin: request_builder.origin.clone().into_url_origin(),
@@ -2119,18 +2118,37 @@ impl Document {
         if result == csp::CheckResult::Blocked {
             warn!("Request blocked by CSP: {:?}", violations);
 
-            let global = self.window.upcast::<GlobalScope>();
+            // Let target be violation’s element. :(
 
-            let event = SecurityPolicyViolationEvent::new(
-                &global,
-                Atom::from("securitypolicyviolation".to_owned()),
-                true,
-                false,
-                provisional_request.url(),
-                provisional_request.destination,
-            );
+            let document = Trusted::new(self);
+            self.window
+                .task_manager()
+                .networking_task_source()
+                .queue(
+                    task!(fire_contentsecuritypolicyviolation_event: move || {
+                        let document = document.root();
+                        let window = document.window();
+                        let global = window.upcast::<GlobalScope>();
 
-            event.upcast::<Event>().fire(&self.upcast());
+                        let event = SecurityPolicyViolationEvent::new(
+                            &global,
+                            Atom::from("securitypolicyviolation".to_owned()),
+                            true,
+                            false,
+                            Some(provisional_request.url()),
+                            provisional_request.destination,
+                        );
+
+                        let event = event.upcast::<Event>();
+
+                        event.set_trusted(true);
+
+                        // TODO correct target
+                        event.upcast::<Event>().fire(&document.upcast());
+                    }),
+                    self.window.upcast(),
+                )
+                .unwrap();
 
             return;
         }
@@ -3411,7 +3429,42 @@ impl Document {
                     c.should_elements_inline_type_behavior_be_blocked(&element, type_, source);
 
                 if !violations.is_empty() {
-                    // TODO fire SecurityPolicyViolationEvent
+                    warn!(
+                        "should_elements_inline_type_behavior_be_blocked::Violations: {:?}",
+                        violations
+                    );
+
+                    violations.iter().for_each(|_| {
+                        let doc = Trusted::new(self);
+
+                        self.window
+                            .task_manager()
+                            .networking_task_source()
+                            .queue(
+                                task!(fire_contentsecuritypolicyviolation_event: move || {
+                                    let document = doc.root();
+                                    let window = document.window();
+                                    let global = window.upcast::<GlobalScope>();
+
+                                    let event = SecurityPolicyViolationEvent::new(
+                                        &global,
+                                        Atom::from("securitypolicyviolation".to_owned()),
+                                        true,
+                                        false,
+                                        None,
+                                        csp::Destination::Script
+                                    );
+
+                                    let event = event.upcast::<Event>();
+
+                                    event.set_trusted(true);
+
+                                    event.upcast::<Event>().fire(&document.upcast());
+                                }),
+                                self.window.upcast(),
+                            )
+                            .unwrap();
+                    });
                 }
 
                 result
@@ -4142,6 +4195,7 @@ impl ProfilerMetadataFactory for Document {
     }
 }
 
+#[allow(non_snake_case)]
 impl DocumentMethods for Document {
     // https://w3c.github.io/editing/ActiveDocuments/execCommand.html#querycommandsupported()
     fn QueryCommandSupported(&self, _command: DOMString) -> bool {
