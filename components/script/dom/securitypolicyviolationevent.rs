@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use content_security_policy::Destination;
+use content_security_policy::{Destination, Violation, ViolationResource};
 use dom_struct::dom_struct;
 use js::rust::HandleObject;
 use servo_atoms::Atom;
@@ -72,20 +72,32 @@ impl SecurityPolicyViolationEvent {
         type_: Atom,
         bubbles: bool,
         cancelable: bool,
-        url: ServoUrl,
+        url: Option<ServoUrl>,
         destination: Destination,
     ) -> DomRoot<SecurityPolicyViolationEvent> {
         let mut init = SecurityPolicyViolationEventInit::empty();
 
-        init.documentURI = strip_url_for_use_in_reports(url).into();
+        if let Some(_url) = url {
+            init.documentURI = strip_url_for_use_in_reports(_url).into()
+        } else {
+            init.documentURI = USVString(String::from("inline"))
+        };
 
         if destination == Destination::Script {
             init.effectiveDirective = DOMString::from("script-src-elem".to_owned());
         }
 
         init.violatedDirective = init.effectiveDirective.clone();
+        init.blockedURI = init.documentURI.clone();
 
-        Self::new_with_proto(global, None, type_, bubbles, cancelable, &init)
+        Self::new_with_proto(
+            global,
+            None,
+            Atom::from("securitypolicyviolation".to_owned()),
+            bubbles,
+            cancelable,
+            &init,
+        )
     }
 
     fn new_with_proto(
