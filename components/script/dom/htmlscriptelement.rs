@@ -991,9 +991,21 @@ impl HTMLScriptElement {
 
         let mut script = match result {
             // Step 2.
-            Err(e) => {
-                warn!("error loading script {:?}", e);
-                self.dispatch_error_event();
+            Err(error) => {
+                warn!("error loading script {:?}", error);
+
+                match error.0 {
+                    NetworkError::ContentSecurityPolicyViolation(url, destination) => {
+                        doc.dispatch_content_security_policy_violation_event(
+                            url,
+                            destination,
+                            Some(&self.upcast()),
+                            None,
+                        );
+                    },
+                    _ => self.dispatch_error_event(),
+                }
+
                 return;
             },
 
@@ -1292,6 +1304,7 @@ impl VirtualMethods for HTMLScriptElement {
     }
 }
 
+#[allow(non_snake_case)]
 impl HTMLScriptElementMethods for HTMLScriptElement {
     // https://html.spec.whatwg.org/multipage/#dom-script-src
     make_url_getter!(Src, "src");

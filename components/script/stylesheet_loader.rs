@@ -98,6 +98,25 @@ impl FetchResponseListener for StylesheetContext {
     fn process_request_eof(&mut self) {}
 
     fn process_response(&mut self, metadata: Result<FetchMetadata, NetworkError>) {
+        if let Err(error) = metadata.clone() {
+            match error {
+                NetworkError::ContentSecurityPolicyViolation(url, destination) => {
+                    let this = self.elem.root();
+                    let document = self.document.root();
+
+                    document.dispatch_content_security_policy_violation_event(
+                        url,
+                        destination,
+                        Some(&this.upcast()),
+                        None,
+                    );
+                },
+                _ => warn!("Network error while fetching stylesheet: {:?}", error),
+            }
+
+            return;
+        }
+
         if let Ok(FetchMetadata::Filtered { ref filtered, .. }) = metadata {
             match *filtered {
                 FilteredMetadata::Opaque | FilteredMetadata::OpaqueRedirect(_) => {

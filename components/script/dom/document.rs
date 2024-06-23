@@ -2090,74 +2090,59 @@ impl Document {
         }
     }
 
+    pub fn dispatch_content_security_policy_violation_event(
+        &self,
+        url: ServoUrl,
+        destination: csp::Destination,
+        target: Option<&EventTarget>,
+        check_type: Option<csp::InlineCheckType>,
+    ) {
+        warn!(
+            "Dispatching CSP violation event with destination: {:?} with url: {:?}",
+            destination, url
+        );
+
+        let document = Trusted::new(self);
+        let event_target = Trusted::new(target.unwrap_or(self.upcast()));
+
+        if let Err(_) = self.window.task_manager().networking_task_source().queue(
+            task!(fire_csp_violation_event: move || {
+                let document = document.root();
+                let window = document.window();
+                let global = window.upcast::<GlobalScope>();
+
+                let event = SecurityPolicyViolationEvent::new(
+                    &global,
+                    true,
+                    false,
+                    Some(url),
+                    destination,
+                    check_type,
+                );
+
+                let event = event.upcast::<Event>();
+
+                event.set_trusted(true);
+
+                event.upcast::<Event>().fire(&event_target.root());
+            }),
+            self.window.upcast(),
+        ) {
+            warn!("Failed to queue task: fire_csp_violation_event");
+        }
+    }
+
     pub fn fetch_async(
         &self,
         load: LoadType,
-        mut request_builder: RequestBuilder,
+        mut request: RequestBuilder,
         fetch_target: IpcSender<FetchResponseMsg>,
     ) {
-        let csp_list = self.get_csp_list().map(|x| x.clone());
-
-        let provisional_request = request_builder.clone().build();
-
-        let csp_request = csp::Request {
-            url: request_builder.url.clone().into_url(),
-            origin: request_builder.origin.clone().into_url_origin(),
-            redirect_count: 0,
-            destination: provisional_request.destination,
-            initiator: csp::Initiator::None, // TODO
-            nonce: String::new(),
-            integrity_metadata: provisional_request.integrity_metadata.clone(),
-            parser_metadata: csp::ParserMetadata::None,
-        };
-
-        let (result, violations) = csp_list.map_or((csp::CheckResult::Allowed, Vec::new()), |c| {
-            c.should_request_be_blocked(&csp_request)
-        });
-
-        if result == csp::CheckResult::Blocked {
-            warn!("Request blocked by CSP: {:?}", violations);
-
-            // Let target be violation’s element. :(
-
-            let document = Trusted::new(self);
-            self.window
-                .task_manager()
-                .networking_task_source()
-                .queue(
-                    task!(fire_contentsecuritypolicyviolation_event: move || {
-                        let document = document.root();
-                        let window = document.window();
-                        let global = window.upcast::<GlobalScope>();
-
-                        let event = SecurityPolicyViolationEvent::new(
-                            &global,
-                            Atom::from("securitypolicyviolation".to_owned()),
-                            true,
-                            false,
-                            Some(provisional_request.url()),
-                            provisional_request.destination,
-                        );
-
-                        let event = event.upcast::<Event>();
-
-                        event.set_trusted(true);
-
-                        // TODO correct target
-                        event.upcast::<Event>().fire(&document.upcast());
-                    }),
-                    self.window.upcast(),
-                )
-                .unwrap();
-
-            return;
-        }
-
-        request_builder.csp_list = self.get_csp_list().map(|x| x.clone());
-        request_builder.https_state = self.https_state.get();
+        request.csp_list = self.get_csp_list().map(|x| x.clone());
+        request.https_state = self.https_state.get();
         let mut loader = self.loader.borrow_mut();
 
-        loader.fetch_async(load, request_builder, fetch_target);
+        loader.fetch_async(load, request, fetch_target);
     }
 
     // https://html.spec.whatwg.org/multipage/#the-end
@@ -3429,41 +3414,24 @@ impl Document {
                     c.should_elements_inline_type_behavior_be_blocked(&element, type_, source);
 
                 if !violations.is_empty() {
-                    warn!(
-                        "should_elements_inline_type_behavior_be_blocked::Violations: {:?}",
-                        violations
-                    );
+
+                    warn!("VIOLATIONS: {:?}", violations);
+
+                    let csp_destination = match type_ {
+                        csp::InlineCheckType::Style => csp::Destination::Style,
+                        csp::InlineCheckType::Script => csp::Destination::Script,
+                        csp::InlineCheckType::StyleAttribute => csp::Destination::Style,
+                        csp::InlineCheckType::ScriptAttribute => csp::Destination::Script,
+                        csp::InlineCheckType::Navigation => csp::Destination::None,
+                    };
 
                     violations.iter().for_each(|_| {
-                        let doc = Trusted::new(self);
-
-                        self.window
-                            .task_manager()
-                            .networking_task_source()
-                            .queue(
-                                task!(fire_contentsecuritypolicyviolation_event: move || {
-                                    let document = doc.root();
-                                    let window = document.window();
-                                    let global = window.upcast::<GlobalScope>();
-
-                                    let event = SecurityPolicyViolationEvent::new(
-                                        &global,
-                                        Atom::from("securitypolicyviolation".to_owned()),
-                                        true,
-                                        false,
-                                        None,
-                                        csp::Destination::Script
-                                    );
-
-                                    let event = event.upcast::<Event>();
-
-                                    event.set_trusted(true);
-
-                                    event.upcast::<Event>().fire(&document.upcast());
-                                }),
-                                self.window.upcast(),
-                            )
-                            .unwrap();
+                        self.dispatch_content_security_policy_violation_event(
+                            self.url(),
+                            csp_destination,
+                            Some(el.upcast()),
+                            Some(type_),
+                        );
                     });
                 }
 

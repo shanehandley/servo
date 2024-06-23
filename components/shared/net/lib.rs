@@ -7,6 +7,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base::id::HistoryStateId;
+use content_security_policy::Destination;
 use cookie::Cookie;
 use headers::{ContentType, HeaderMapExt, ReferrerPolicy as ReferrerPolicyHeader};
 use http::{Error as HttpError, HeaderMap, StatusCode};
@@ -750,6 +751,8 @@ pub enum NetworkError {
     LoadCancelled,
     /// SSL validation error, to be converted to Resource::BadCertHTML in the HTML parser.
     SslValidation(String, Vec<u8>),
+    /// CSP Violation
+    ContentSecurityPolicyViolation(ServoUrl, Destination),
     /// Crash error, to be converted to Resource::Crash in the HTML parser.
     Crash(String),
 }

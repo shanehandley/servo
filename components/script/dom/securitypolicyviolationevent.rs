@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use content_security_policy::{Destination, Violation, ViolationResource};
+use content_security_policy::{Destination, InlineCheckType};
 use dom_struct::dom_struct;
 use js::rust::HandleObject;
 use servo_atoms::Atom;
@@ -69,11 +69,11 @@ impl SecurityPolicyViolationEvent {
 
     pub fn new(
         global: &GlobalScope,
-        type_: Atom,
         bubbles: bool,
         cancelable: bool,
         url: Option<ServoUrl>,
         destination: Destination,
+        check_type: Option<InlineCheckType>,
     ) -> DomRoot<SecurityPolicyViolationEvent> {
         let mut init = SecurityPolicyViolationEventInit::empty();
 
@@ -83,11 +83,16 @@ impl SecurityPolicyViolationEvent {
             init.documentURI = USVString(String::from("inline"))
         };
 
-        if destination == Destination::Script {
-            init.effectiveDirective = DOMString::from("script-src-elem".to_owned());
-        }
+        warn!("Setting the effectiveDirective: check_type is: {:?}", check_type);
 
-        init.violatedDirective = init.effectiveDirective.clone();
+        init.effectiveDirective = match (check_type, destination) {
+            (Some(InlineCheckType::ScriptAttribute | InlineCheckType::Script), _) => DOMString::from("script-src-attr".to_owned()),
+            (Some(InlineCheckType::StyleAttribute | InlineCheckType::Style), _) => DOMString::from("style-src-attr".to_owned()),
+            (None, Destination::Script) => DOMString::from("script-src-elem".to_owned()),
+            (None, Destination::Style) => DOMString::from("style-src-elem".to_owned()),
+            _ => DOMString::from("todo".to_owned()),
+        };
+
         init.blockedURI = init.documentURI.clone();
 
         Self::new_with_proto(

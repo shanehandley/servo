@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::default::Default;
 use std::rc::Rc;
 
+use content_security_policy::{CheckResult, InlineCheckType};
 use dom_struct::dom_struct;
 use html5ever::{local_name, namespace_url, ns, LocalName, Prefix};
 use js::rust::HandleObject;
@@ -106,6 +107,7 @@ impl HTMLElement {
     }
 }
 
+// TODO: How to block the setter on Style() to prevent it applying if it is blocked by CSP? 
 impl HTMLElementMethods for HTMLElement {
     // https://html.spec.whatwg.org/multipage/#the-style-attribute
     fn Style(&self) -> DomRoot<CSSStyleDeclaration> {
