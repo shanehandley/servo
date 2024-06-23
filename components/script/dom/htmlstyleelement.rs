@@ -4,6 +4,7 @@
 
 use std::cell::Cell;
 
+use content_security_policy as csp;
 use cssparser::{Parser as CssParser, ParserInput};
 use dom_struct::dom_struct;
 use html5ever::{local_name, namespace_url, ns, LocalName, Prefix};
@@ -83,9 +84,12 @@ impl HTMLStyleElement {
         )
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#update-a-style-block>
     pub fn parse_own_css(&self) {
+        // Step 1: Let element be the style element.
         let node = self.upcast::<Node>();
         let element = self.upcast::<Element>();
+
         assert!(node.is_connected());
 
         let window = window_from_node(node);
@@ -100,8 +104,20 @@ impl HTMLStyleElement {
         let data = node
             .GetTextContent()
             .expect("Element.textContent must be a string");
+
+        if doc.should_elements_inline_type_behavior_be_blocked(
+            element,
+            csp::InlineCheckType::Style,
+            &data,
+        ) == csp::CheckResult::Blocked
+        {
+            warn!("Blocking inline style due to CSP");
+            return;
+        }
+
         let url_data = UrlExtraData(window.get_url().get_arc());
         let css_error_reporter = window.css_error_reporter();
+
         let context = CssParserContext::new(
             Origin::Author,
             &url_data,
@@ -274,6 +290,7 @@ impl StylesheetOwner for HTMLStyleElement {
     }
 }
 
+#[allow(non_snake_case)]
 impl HTMLStyleElementMethods for HTMLStyleElement {
     /// <https://drafts.csswg.org/cssom/#dom-linkstyle-sheet>
     fn GetSheet(&self) -> Option<DomRoot<DOMStyleSheet>> {

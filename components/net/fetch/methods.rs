@@ -199,7 +199,7 @@ pub async fn main_fetch(
     }
 
     // Step 4: Run report Content Security Policy violations for request.
-    // This also incorporates the CSP aspect of Step 7: Setting the response to a NetworkError
+    // This also incorporates the CSP aspect of Step 7: Setting the response to a NetworkError.
     if let Some(csp) = request.csp_list.as_ref() {
         if let Origin::Origin(origin) = &request.origin {
             let csp_request = csp::Request {
@@ -208,7 +208,7 @@ pub async fn main_fetch(
                 redirect_count: request.redirect_count,
                 destination: request.destination,
                 initiator: csp::Initiator::None, // TODO
-                nonce: String::new(),
+                nonce: String::new(),            // TODO
                 integrity_metadata: request.integrity_metadata.clone(),
                 parser_metadata: csp::ParserMetadata::None,
             };
@@ -217,21 +217,20 @@ pub async fn main_fetch(
 
             // https://w3c.github.io/webappsec-csp/#report-violation
             if !report_only_violations.is_empty() {
-                // TODO fire SecurityPolicyViolationEvent
+                // TODO continue the request, but report violations
             }
 
-            let (result, violations) = csp.should_request_be_blocked(&csp_request);
+            let (result, _) = csp.should_request_be_blocked(&csp_request);
 
             if result == csp::CheckResult::Blocked {
-                warn!("Request blocked by CSP");
+                warn!("Request blocked by Content-Security-Policy");
 
-                response = Some(Response::network_error(NetworkError::Internal(
-                    "Blocked by Content-Security-Policy".into(),
-                )));
-
-                violations.iter().for_each(|_violation| {
-                    // TODO fire SecurityPolicyViolationEvent
-                });
+                response = Some(Response::network_error(
+                    NetworkError::ContentSecurityPolicyViolation(
+                        request.url(),
+                        request.destination,
+                    ),
+                ));
             }
         }
     }
