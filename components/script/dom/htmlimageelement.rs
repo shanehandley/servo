@@ -145,6 +145,7 @@ enum ImageRequestPhase {
     Pending,
     Current,
 }
+
 #[derive(JSTraceable, MallocSizeOf)]
 #[crown::unrooted_must_root_lint::must_root]
 struct ImageRequest {
@@ -162,6 +163,7 @@ struct ImageRequest {
     final_url: Option<ServoUrl>,
     current_pixel_density: Option<f64>,
 }
+
 #[dom_struct]
 pub struct HTMLImageElement {
     htmlelement: HTMLElement,
@@ -202,6 +204,8 @@ impl HTMLImageElement {
 
 /// The context required for asynchronously loading an external image.
 struct ImageContext {
+    /// The element that initiated the request.
+    elem: Trusted<HTMLImageElement>,
     /// Reference to the script thread image cache.
     image_cache: Arc<dyn ImageCache>,
     /// Indicates whether the request failed, and why
@@ -222,7 +226,27 @@ impl FetchResponseListener for ImageContext {
     fn process_request_eof(&mut self) {}
 
     fn process_response(&mut self, metadata: Result<FetchMetadata, NetworkError>) {
-        debug!("got {:?} for {:?}", metadata.as_ref().map(|_| ()), self.url);
+        warn!("got {:?} for {:?}", metadata.as_ref().map(|_| ()), self.url);
+
+        if let Err(error) = metadata.clone() {
+            match error {
+                NetworkError::ContentSecurityPolicyViolation(url, destination) => {
+                    let this = self.elem.root();
+                    let document = self.doc.root();
+
+                    document.dispatch_content_security_policy_violation_event(
+                        url,
+                        destination,
+                        Some(&this.upcast()),
+                        None,
+                    );
+                },
+                _ => warn!("Network error while fetching image: {:?}", error),
+            }
+
+            return;
+        }
+
         self.image_cache
             .notify_pending_response(self.id, FetchResponseMsg::ProcessResponse(metadata.clone()));
 
@@ -327,6 +351,7 @@ pub(crate) fn image_fetch_request(
     if from_picture_or_srcset == FromPictureOrSrcSet::Yes {
         request = request.initiator(Initiator::ImageSet);
     }
+
     request
 }
 
@@ -371,6 +396,7 @@ impl HTMLImageElement {
         let window = window_from_node(self);
 
         let context = Arc::new(Mutex::new(ImageContext {
+            elem: Trusted::new(&self),
             image_cache: window.image_cache(),
             status: Ok(()),
             id,
@@ -397,7 +423,7 @@ impl HTMLImageElement {
             }),
         );
 
-        let request = image_fetch_request(
+        let mut request = image_fetch_request(
             img_url.clone(),
             document.origin().immutable().clone(),
             document.global().get_referrer(),
@@ -410,6 +436,9 @@ impl HTMLImageElement {
                 FromPictureOrSrcSet::No
             },
         );
+
+        // TODO: It's not clear where the CSP should be set for an image request
+        request.csp_list = document.get_csp_list().map(|x| x.clone());
 
         // This is a background load because the load blocker already fulfills the
         // purpose of delaying the document's load event.
@@ -810,7 +839,9 @@ impl HTMLImageElement {
         request.source_url = Some(src.clone());
         request.image = None;
         request.metadata = None;
+
         let document = document_from_node(self);
+
         LoadBlocker::terminate(&mut request.blocker);
         request.blocker = Some(LoadBlocker::new(&document, LoadType::Image(url.clone())));
     }
@@ -1143,6 +1174,8 @@ impl HTMLImageElement {
             sender,
             UsePlaceholder::No,
         );
+
+        warn!("CACHE_RESULT: {:?}", cache_result);
 
         match cache_result {
             ImageCacheResult::Available(ImageOrMetadataAvailable::ImageAvailable { .. }) => {

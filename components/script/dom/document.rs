@@ -3414,7 +3414,6 @@ impl Document {
                     c.should_elements_inline_type_behavior_be_blocked(&element, type_, source);
 
                 if !violations.is_empty() {
-
                     warn!("VIOLATIONS: {:?}", violations);
 
                     let csp_destination = match type_ {

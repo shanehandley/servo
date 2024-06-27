@@ -759,6 +759,7 @@ impl From<NetTraitsRequestDestination> for RequestDestination {
             NetTraitsRequestDestination::Video => RequestDestination::Video,
             NetTraitsRequestDestination::Worker => RequestDestination::Worker,
             NetTraitsRequestDestination::Xslt => RequestDestination::Xslt,
+            _ => RequestDestination::_empty,
         }
     }
 }

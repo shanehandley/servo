@@ -207,11 +207,13 @@ pub async fn main_fetch(
                 origin: origin.clone().into_url_origin(),
                 redirect_count: request.redirect_count,
                 destination: request.destination,
-                initiator: csp::Initiator::None, // TODO
+                initiator: csp::Initiator::None, // TODO infer from request.initiator
                 nonce: String::new(),            // TODO
                 integrity_metadata: request.integrity_metadata.clone(),
                 parser_metadata: csp::ParserMetadata::None,
             };
+
+            warn!("CSP_REQUEST: {:?}", csp_request.clone());
 
             let report_only_violations = csp.report_violations_for_request(&csp_request);
 
@@ -233,6 +235,8 @@ pub async fn main_fetch(
                 ));
             }
         }
+    } else {
+        warn!("NO CSP FOR REQUEST");
     }
 
     // Step 3.
