@@ -864,7 +864,7 @@ impl HTMLMediaElement {
         };
 
         let cors_setting = cors_setting_for_element(self.upcast());
-        let request = create_a_potential_cors_request(
+        let mut request = create_a_potential_cors_request(
             url.clone(),
             destination,
             cors_setting,
@@ -876,6 +876,9 @@ impl HTMLMediaElement {
         .pipeline_id(Some(self.global().pipeline_id()))
         .referrer_policy(document.get_referrer_policy());
 
+        // TODO: It's not clear where the CSP should be set for an image request
+        request.csp_list = document.get_csp_list().map(|x| x.clone());
+
         let mut current_fetch_context = self.current_fetch_context.borrow_mut();
         if let Some(ref mut current_fetch_context) = *current_fetch_context {
             current_fetch_context.cancel(CancelReason::Overridden);
@@ -884,6 +887,7 @@ impl HTMLMediaElement {
         *current_fetch_context = Some(fetch_context);
         let fetch_listener = Arc::new(Mutex::new(HTMLMediaElementFetchListener::new(
             self,
+            &document,
             url.clone(),
             offset.unwrap_or(0),
             seek_lock,
@@ -2636,6 +2640,8 @@ struct HTMLMediaElementFetchListener {
     metadata: Option<Metadata>,
     /// The generation of the media element when this fetch started.
     generation_id: u32,
+    /// The node document for elem when the load was initiated.
+    document: Trusted<Document>,
     /// Time of last progress notification.
     next_progress_event: Instant,
     /// Timing data for this resource.
@@ -2667,6 +2673,24 @@ impl FetchResponseListener for HTMLMediaElementFetchListener {
 
         if elem.generation_id.get() != self.generation_id || elem.player.borrow().is_none() {
             // A new fetch request was triggered, so we ignore this response.
+            return;
+        }
+
+        let document = self.document.root();
+
+        if let Err(error) = metadata.clone() {
+            match error {
+                NetworkError::ContentSecurityPolicyViolation(url, destination) => {
+                    document.dispatch_content_security_policy_violation_event(
+                        url,
+                        destination,
+                        Some(&elem.upcast()),
+                        None,
+                    );
+                },
+                _ => warn!("Network error while fetching stylesheet: {:?}", error),
+            }
+
             return;
         }
 
@@ -2910,6 +2934,7 @@ impl PreInvoke for HTMLMediaElementFetchListener {
 impl HTMLMediaElementFetchListener {
     fn new(
         elem: &HTMLMediaElement,
+        document: &Document,
         url: ServoUrl,
         offset: u64,
         seek_lock: Option<SeekLock>,
@@ -2918,6 +2943,7 @@ impl HTMLMediaElementFetchListener {
             elem: Trusted::new(elem),
             metadata: None,
             generation_id: elem.generation_id.get(),
+            document: Trusted::new(document),
             next_progress_event: Instant::now() + Duration::from_millis(350),
             resource_timing: ResourceFetchTiming::new(ResourceTimingType::Resource),
             url,

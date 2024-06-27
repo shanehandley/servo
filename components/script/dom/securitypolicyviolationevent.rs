@@ -83,14 +83,26 @@ impl SecurityPolicyViolationEvent {
             init.documentURI = USVString(String::from("inline"))
         };
 
-        warn!("Setting the effectiveDirective: check_type is: {:?}", check_type);
+        warn!(
+            "Setting the effectiveDirective: check_type is: {:?}",
+            check_type
+        );
 
         init.effectiveDirective = match (check_type, destination) {
-            (Some(InlineCheckType::ScriptAttribute | InlineCheckType::Script), _) => DOMString::from("script-src-attr".to_owned()),
-            (Some(InlineCheckType::StyleAttribute | InlineCheckType::Style), _) => DOMString::from("style-src-attr".to_owned()),
+            (Some(InlineCheckType::ScriptAttribute | InlineCheckType::Script), _) => {
+                DOMString::from("script-src-attr".to_owned())
+            },
+            (Some(InlineCheckType::StyleAttribute | InlineCheckType::Style), _) => {
+                DOMString::from("style-src-attr".to_owned())
+            },
             (None, Destination::Script) => DOMString::from("script-src-elem".to_owned()),
             (None, Destination::Style) => DOMString::from("style-src-elem".to_owned()),
-            _ => DOMString::from("todo".to_owned()),
+            (None, Destination::Audio) => DOMString::from("media-src".to_owned()),
+            _ => {
+                warn!("unhandled destination: {:?}", destination);
+
+                DOMString::from("todo".to_owned())
+            },
         };
 
         init.blockedURI = init.documentURI.clone();

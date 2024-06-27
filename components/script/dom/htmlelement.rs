@@ -107,7 +107,7 @@ impl HTMLElement {
     }
 }
 
-// TODO: How to block the setter on Style() to prevent it applying if it is blocked by CSP? 
+// TODO: How to block the setter on Style() to prevent it applying if it is blocked by CSP?
 impl HTMLElementMethods for HTMLElement {
     // https://html.spec.whatwg.org/multipage/#the-style-attribute
     fn Style(&self) -> DomRoot<CSSStyleDeclaration> {
