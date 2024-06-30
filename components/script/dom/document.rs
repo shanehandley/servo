@@ -157,6 +157,7 @@ use crate::dom::processinginstruction::ProcessingInstruction;
 use crate::dom::promise::Promise;
 use crate::dom::range::Range;
 use crate::dom::resizeobserver::{ResizeObservationDepth, ResizeObserver};
+use crate::dom::securitypolicyviolationevent::SecurityPolicyViolationEvent;
 use crate::dom::selection::Selection;
 use crate::dom::servoparser::ServoParser;
 use crate::dom::shadowroot::ShadowRoot;
@@ -2089,6 +2090,48 @@ impl Document {
         }
     }
 
+    pub fn dispatch_content_security_policy_violation_event(
+        &self,
+        url: ServoUrl,
+        destination: csp::Destination,
+        target: Option<&EventTarget>,
+        check_type: Option<csp::InlineCheckType>,
+    ) {
+        warn!(
+            "Dispatching CSP violation event with destination: {:?} with url: {:?}",
+            destination, url
+        );
+
+        let document = Trusted::new(self);
+        let event_target = Trusted::new(target.unwrap_or(self.upcast()));
+
+        if let Err(_) = self.window.task_manager().networking_task_source().queue(
+            task!(fire_csp_violation_event: move || {
+                let document = document.root();
+                let window = document.window();
+                let global = window.upcast::<GlobalScope>();
+
+                let event = SecurityPolicyViolationEvent::new(
+                    &global,
+                    true,
+                    false,
+                    Some(url),
+                    destination,
+                    check_type,
+                );
+
+                let event = event.upcast::<Event>();
+
+                event.set_trusted(true);
+
+                event.upcast::<Event>().fire(&event_target.root());
+            }),
+            self.window.upcast(),
+        ) {
+            warn!("Failed to queue task: fire_csp_violation_event");
+        }
+    }
+
     pub fn fetch_async(
         &self,
         load: LoadType,
@@ -2098,6 +2141,7 @@ impl Document {
         request.csp_list = self.get_csp_list().map(|x| x.clone());
         request.https_state = self.https_state.get();
         let mut loader = self.loader.borrow_mut();
+
         loader.fetch_async(load, request, fetch_target);
     }
 
@@ -3362,11 +3406,35 @@ impl Document {
                 .get_attribute(&ns!(), &local_name!("nonce"))
                 .map(|attr| Cow::Owned(attr.value().to_string())),
         };
+
         // TODO: Instead of ignoring violations, report them.
         self.get_csp_list()
             .map(|c| {
-                c.should_elements_inline_type_behavior_be_blocked(&element, type_, source)
-                    .0
+                let (result, violations) =
+                    c.should_elements_inline_type_behavior_be_blocked(&element, type_, source);
+
+                if !violations.is_empty() {
+                    warn!("VIOLATIONS: {:?}", violations);
+
+                    let csp_destination = match type_ {
+                        csp::InlineCheckType::Style => csp::Destination::Style,
+                        csp::InlineCheckType::Script => csp::Destination::Script,
+                        csp::InlineCheckType::StyleAttribute => csp::Destination::Style,
+                        csp::InlineCheckType::ScriptAttribute => csp::Destination::Script,
+                        csp::InlineCheckType::Navigation => csp::Destination::None,
+                    };
+
+                    violations.iter().for_each(|_| {
+                        self.dispatch_content_security_policy_violation_event(
+                            self.url(),
+                            csp_destination,
+                            Some(el.upcast()),
+                            Some(type_),
+                        );
+                    });
+                }
+
+                result
             })
             .unwrap_or(csp::CheckResult::Allowed)
     }
@@ -4094,6 +4162,7 @@ impl ProfilerMetadataFactory for Document {
     }
 }
 
+#[allow(non_snake_case)]
 impl DocumentMethods for Document {
     // https://w3c.github.io/editing/ActiveDocuments/execCommand.html#querycommandsupported()
     fn QueryCommandSupported(&self, _command: DOMString) -> bool {
