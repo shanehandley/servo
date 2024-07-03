@@ -2141,7 +2141,6 @@ impl Document {
         request.csp_list = self.get_csp_list().map(|x| x.clone());
         request.https_state = self.https_state.get();
         let mut loader = self.loader.borrow_mut();
-
         loader.fetch_async(load, request, fetch_target);
     }
 

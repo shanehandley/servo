@@ -89,12 +89,14 @@ impl SecurityPolicyViolationEvent {
         );
 
         init.effectiveDirective = match (check_type, destination) {
-            (Some(InlineCheckType::ScriptAttribute | InlineCheckType::Script), _) => {
+            (Some(InlineCheckType::ScriptAttribute), _) => {
                 DOMString::from("script-src-attr".to_owned())
             },
-            (Some(InlineCheckType::StyleAttribute | InlineCheckType::Style), _) => {
+            (Some(InlineCheckType::StyleAttribute), _) => {
                 DOMString::from("style-src-attr".to_owned())
             },
+            (Some(InlineCheckType::Script), _) => DOMString::from("script-src-elem".to_owned()),
+            (Some(InlineCheckType::Style), _) => DOMString::from("style-src-elem".to_owned()),
             (None, Destination::Script) => DOMString::from("script-src-elem".to_owned()),
             (None, Destination::Style) => DOMString::from("style-src-elem".to_owned()),
             (None, Destination::Audio) => DOMString::from("media-src".to_owned()),
@@ -105,7 +107,16 @@ impl SecurityPolicyViolationEvent {
             },
         };
 
-        init.blockedURI = init.documentURI.clone();
+        init.blockedURI = match check_type {
+            Some(InlineCheckType::StyleAttribute) | Some(InlineCheckType::Style) => {
+                USVString(String::from("inline"))
+            },
+            _ => {
+                warn!("InlineCheckType: {:?}", check_type);
+
+                init.documentURI.clone()
+            },
+        };
 
         Self::new_with_proto(
             global,

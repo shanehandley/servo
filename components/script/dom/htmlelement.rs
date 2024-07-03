@@ -111,7 +111,7 @@ impl HTMLElement {
 impl HTMLElementMethods for HTMLElement {
     // https://html.spec.whatwg.org/multipage/#the-style-attribute
     fn Style(&self) -> DomRoot<CSSStyleDeclaration> {
-        self.style_decl.or_init(|| {
+        let style_declaration = self.style_decl.or_init(|| {
             let global = window_from_node(self);
             CSSStyleDeclaration::new(
                 &global,
@@ -119,7 +119,20 @@ impl HTMLElementMethods for HTMLElement {
                 None,
                 CSSModificationAccess::ReadWrite,
             )
-        })
+        });
+
+        let document = document_from_node(self);
+
+        if document.should_elements_inline_type_behavior_be_blocked(
+            &self.upcast::<Element>(),
+            InlineCheckType::StyleAttribute,
+            "",
+        ) == CheckResult::Blocked
+        {
+            warn!("THIS SHOULD BE BLOCKED")
+        }
+
+        style_declaration
     }
 
     // https://html.spec.whatwg.org/multipage/#attr-title

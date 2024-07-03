@@ -145,7 +145,6 @@ enum ImageRequestPhase {
     Pending,
     Current,
 }
-
 #[derive(JSTraceable, MallocSizeOf)]
 #[crown::unrooted_must_root_lint::must_root]
 struct ImageRequest {
@@ -163,7 +162,6 @@ struct ImageRequest {
     final_url: Option<ServoUrl>,
     current_pixel_density: Option<f64>,
 }
-
 #[dom_struct]
 pub struct HTMLImageElement {
     htmlelement: HTMLElement,
@@ -351,7 +349,6 @@ pub(crate) fn image_fetch_request(
     if from_picture_or_srcset == FromPictureOrSrcSet::Yes {
         request = request.initiator(Initiator::ImageSet);
     }
-
     request
 }
 
@@ -839,13 +836,10 @@ impl HTMLImageElement {
         request.source_url = Some(src.clone());
         request.image = None;
         request.metadata = None;
-
         let document = document_from_node(self);
-
         LoadBlocker::terminate(&mut request.blocker);
         request.blocker = Some(LoadBlocker::new(&document, LoadType::Image(url.clone())));
     }
-
     /// Step 13-17 of html.spec.whatwg.org/multipage/#update-the-image-data
     fn prepare_image_request(&self, url: &ServoUrl, src: &USVString, selected_pixel_density: f64) {
         match self.image_request.get() {
@@ -1174,8 +1168,6 @@ impl HTMLImageElement {
             sender,
             UsePlaceholder::No,
         );
-
-        warn!("CACHE_RESULT: {:?}", cache_result);
 
         match cache_result {
             ImageCacheResult::Available(ImageOrMetadataAvailable::ImageAvailable { .. }) => {

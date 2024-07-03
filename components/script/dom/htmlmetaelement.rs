@@ -248,7 +248,6 @@ impl HTMLMetaElementMethods for HTMLMetaElement {
 
     // https://html.spec.whatwg.org/multipage/#dom-meta-httpequiv
     make_getter!(HttpEquiv, "http-equiv");
-
     // https://html.spec.whatwg.org/multipage/#dom-meta-httpequiv
     make_atomic_setter!(SetHttpEquiv, "http-equiv");
 }
