@@ -202,6 +202,8 @@ impl HTMLImageElement {
 
 /// The context required for asynchronously loading an external image.
 struct ImageContext {
+    /// The element that initiated the request.
+    elem: Trusted<HTMLImageElement>,
     /// Reference to the script thread image cache.
     image_cache: Arc<dyn ImageCache>,
     /// Indicates whether the request failed, and why
@@ -222,7 +224,27 @@ impl FetchResponseListener for ImageContext {
     fn process_request_eof(&mut self) {}
 
     fn process_response(&mut self, metadata: Result<FetchMetadata, NetworkError>) {
-        debug!("got {:?} for {:?}", metadata.as_ref().map(|_| ()), self.url);
+        warn!("got {:?} for {:?}", metadata.as_ref().map(|_| ()), self.url);
+
+        if let Err(error) = metadata.clone() {
+            match error {
+                NetworkError::ContentSecurityPolicyViolation(url, destination) => {
+                    let this = self.elem.root();
+                    let document = self.doc.root();
+
+                    document.dispatch_content_security_policy_violation_event(
+                        url,
+                        destination,
+                        Some(&this.upcast()),
+                        None,
+                    );
+                },
+                _ => warn!("Network error while fetching image: {:?}", error),
+            }
+
+            return;
+        }
+
         self.image_cache
             .notify_pending_response(self.id, FetchResponseMsg::ProcessResponse(metadata.clone()));
 
@@ -371,6 +393,7 @@ impl HTMLImageElement {
         let window = window_from_node(self);
 
         let context = Arc::new(Mutex::new(ImageContext {
+            elem: Trusted::new(&self),
             image_cache: window.image_cache(),
             status: Ok(()),
             id,
@@ -397,7 +420,7 @@ impl HTMLImageElement {
             }),
         );
 
-        let request = image_fetch_request(
+        let mut request = image_fetch_request(
             img_url.clone(),
             document.origin().immutable().clone(),
             document.global().get_referrer(),
@@ -410,6 +433,9 @@ impl HTMLImageElement {
                 FromPictureOrSrcSet::No
             },
         );
+
+        // TODO: It's not clear where the CSP should be set for an image request
+        request.csp_list = document.get_csp_list().map(|x| x.clone());
 
         // This is a background load because the load blocker already fulfills the
         // purpose of delaying the document's load event.
@@ -814,7 +840,6 @@ impl HTMLImageElement {
         LoadBlocker::terminate(&mut request.blocker);
         request.blocker = Some(LoadBlocker::new(&document, LoadType::Image(url.clone())));
     }
-
     /// Step 13-17 of html.spec.whatwg.org/multipage/#update-the-image-data
     fn prepare_image_request(&self, url: &ServoUrl, src: &USVString, selected_pixel_density: f64) {
         match self.image_request.get() {

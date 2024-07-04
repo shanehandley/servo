@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::default::Default;
 use std::rc::Rc;
 
+use content_security_policy::{CheckResult, InlineCheckType};
 use dom_struct::dom_struct;
 use html5ever::{local_name, namespace_url, ns, LocalName, Prefix};
 use js::rust::HandleObject;
@@ -106,10 +107,11 @@ impl HTMLElement {
     }
 }
 
+// TODO: How to block the setter on Style() to prevent it applying if it is blocked by CSP?
 impl HTMLElementMethods for HTMLElement {
     // https://html.spec.whatwg.org/multipage/#the-style-attribute
     fn Style(&self) -> DomRoot<CSSStyleDeclaration> {
-        self.style_decl.or_init(|| {
+        let style_declaration = self.style_decl.or_init(|| {
             let global = window_from_node(self);
             CSSStyleDeclaration::new(
                 &global,
@@ -117,7 +119,20 @@ impl HTMLElementMethods for HTMLElement {
                 None,
                 CSSModificationAccess::ReadWrite,
             )
-        })
+        });
+
+        let document = document_from_node(self);
+
+        if document.should_elements_inline_type_behavior_be_blocked(
+            &self.upcast::<Element>(),
+            InlineCheckType::StyleAttribute,
+            "",
+        ) == CheckResult::Blocked
+        {
+            warn!("THIS SHOULD BE BLOCKED")
+        }
+
+        style_declaration
     }
 
     // https://html.spec.whatwg.org/multipage/#attr-title
