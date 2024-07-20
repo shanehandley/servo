@@ -9,7 +9,7 @@
 </head>
 <body>
 <script>
-  // TrustedHTML assignments do not throw.
+  // TrustedURL assignments do not throw.
   let p = createHTML_policy(window, 1);
   test(t => {
     document.body.innerText = '';
@@ -26,7 +26,7 @@
     assert_equals(document.body.innerText, "abcdefghijkl");
   }, "document.write with multiple trusted arguments.");
 
-  // TrustedHTML assignments do not throw. (Now for writeln.)
+  // TrustedURL assignments do not throw. (Now for writeln.)
   test(t => {
     document.body.innerText = '';
     let html = p.createHTML(INPUTS.HTML);

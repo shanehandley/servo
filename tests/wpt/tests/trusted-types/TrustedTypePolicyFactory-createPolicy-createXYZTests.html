@@ -71,6 +71,9 @@
     assert_throws_js(TypeError, _ => {
       p.createScriptURL(INPUTS.SCRIPTURL);
     });
+    assert_throws_js(TypeError, _ => {
+      p.createURL(INPUTS.URL);
+    });
   }, "createHTML defined - calling undefined callbacks throws");
 
   //Script tests
@@ -141,6 +144,9 @@
     });
     assert_throws_js(TypeError, _ => {
       p.createScriptURL(INPUTS.SCRIPTURL);
+    });
+    assert_throws_js(TypeError, _ => {
+      p.createURL(INPUTS.URL);
     });
   }, "createScript defined - calling undefined callbacks throws");
 
@@ -213,6 +219,9 @@
     });
     assert_throws_js(TypeError, _ => {
       p.createScript(INPUTS.SCRIPT);
+    });
+    assert_throws_js(TypeError, _ => {
+      p.createURL(INPUTS.URL);
     });
   }, "createScriptURL defined - calling undefined callbacks throws");
 

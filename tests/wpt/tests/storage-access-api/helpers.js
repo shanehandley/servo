@@ -29,13 +29,8 @@ async function CreateFrameHelper(setUpFrame, fetchTests) {
 // Create an iframe element with content loaded from `sourceURL`, append it to
 // the document, and optionally fetch tests. Returns the loaded frame, once
 // ready.
-function CreateFrame(
-  sourceURL, fetchTests = false, frameSandboxAttribute = undefined) {
+function CreateFrame(sourceURL, fetchTests = false) {
   return CreateFrameHelper((frame) => {
-    if (frameSandboxAttribute !== undefined) {
-      frame.sandbox = frameSandboxAttribute;
-    }
-
     frame.src = sourceURL;
     document.body.appendChild(frame);
   }, fetchTests);
@@ -43,8 +38,8 @@ function CreateFrame(
 
 // Create a new iframe with content loaded from `sourceURL`, and fetches tests.
 // Returns the loaded frame, once ready.
-function RunTestsInIFrame(sourceURL, frameSandboxAttribute = undefined) {
-  return CreateFrame(sourceURL, true, frameSandboxAttribute);
+function RunTestsInIFrame(sourceURL) {
+  return CreateFrame(sourceURL, true);
 }
 
 function RunTestsInNestedIFrame(sourceURL) {

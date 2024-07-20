@@ -192,7 +192,6 @@ const TEST_TEMPLATE = {
   // For each test, copy this template and replace the number by the appropriate
   // number for this type
   testInput: [MIN, BIAS, MAX, MIN, HALF, NEGATIVE_HALF, BIAS, MAX, BIAS, BIAS],
-  testInterleavedResult: [MIN, NEGATIVE_HALF, BIAS, BIAS, MAX, MAX, MIN, BIAS, HALF, BIAS],
   testVectorInterleavedResult: [
     [MIN, MAX, HALF, BIAS, BIAS],
     [BIAS, MIN, NEGATIVE_HALF, MAX, BIAS],
@@ -273,10 +272,6 @@ function get_type_values(type) {
   let cloned = structuredClone(TEST_TEMPLATE);
   cloned.testInput = Array.from(
     cloned.testInput,
-    idx => TEST_VALUES[type][idx]
-  );
-  cloned.testInterleavedResult = Array.from(
-    cloned.testInterleavedResult,
     idx => TEST_VALUES[type][idx]
   );
   cloned.testVectorInterleavedResult = Array.from(
@@ -423,15 +418,7 @@ function conversionTest(sourceType, destinationType) {
       "planar channel 1",
       assert_func
     );
-    // Copy to interleaved from planar: all channels are copied
-    data.copyTo(destInterleaved, {planeIndex: 0, format: destinationType});
-    check_array_equality(
-      destInterleaved,
-      result.testInterleavedResult,
-      sourceType,
-      "planar to interleaved",
-      assert_func
-    );
+    // Planar to interleaved isn't supported
   }, `Test conversion of ${sourceType} to ${destinationType}`);
 }
 
