@@ -169,6 +169,33 @@ pub enum BodyChunkRequest {
     Error,
 }
 
+/// A partial implementation of of the environment settings object. There are additional properties
+/// provided directly to the request which are candidates to be moved into this struct, in addition
+/// to other properties which are yet to be implemented.
+///
+/// <https://html.spec.whatwg.org/multipage/#environment-settings-object>
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct EnvironmentSettingsObject {
+    /// An origin used in security checks
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-settings-object-origin>
+    pub origin: Origin,
+    /// A URL that represents the location of the resource with which this environment is
+    /// associated.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-creation-url>
+    pub creation_url: Option<ServoUrl>,
+}
+
+impl EnvironmentSettingsObject {
+    pub fn new(origin: Origin, creation_url: Option<ServoUrl>) -> EnvironmentSettingsObject {
+        EnvironmentSettingsObject {
+            origin,
+            creation_url,
+        }
+    }
+}
+
 /// The net component's view into <https://fetch.spec.whatwg.org/#bodies>
 #[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
 pub struct RequestBody {
@@ -239,7 +266,7 @@ pub struct RequestBuilder {
     pub unsafe_request: bool,
     pub body: Option<RequestBody>,
     pub service_workers_mode: ServiceWorkersMode,
-    // TODO: client object
+    pub client: Option<EnvironmentSettingsObject>,
     pub destination: Destination,
     pub synchronous: bool,
     pub mode: RequestMode,
@@ -278,6 +305,7 @@ impl RequestBuilder {
             unsafe_request: false,
             body: None,
             service_workers_mode: ServiceWorkersMode::All,
+            client: None,
             destination: Destination::None,
             synchronous: false,
             mode: RequestMode::NoCors,
@@ -323,6 +351,11 @@ impl RequestBuilder {
 
     pub fn body(mut self, body: Option<RequestBody>) -> RequestBuilder {
         self.body = body;
+        self
+    }
+
+    pub fn client(mut self, environment: EnvironmentSettingsObject) -> RequestBuilder {
+        self.client = Some(environment);
         self
     }
 
@@ -414,6 +447,7 @@ impl RequestBuilder {
         request.headers = self.headers;
         request.unsafe_request = self.unsafe_request;
         request.body = self.body;
+        request.client = self.client;
         request.service_workers_mode = self.service_workers_mode;
         request.destination = self.destination;
         request.synchronous = self.synchronous;
@@ -457,7 +491,9 @@ pub struct Request {
     pub unsafe_request: bool,
     /// <https://fetch.spec.whatwg.org/#concept-request-body>
     pub body: Option<RequestBody>,
-    // TODO: client object
+    /// <https://fetch.spec.whatwg.org/#concept-request-client>
+    pub client: Option<EnvironmentSettingsObject>,
+    /// <https://fetch.spec.whatwg.org/#concept-request-window>
     pub window: Window,
     // TODO: target browsing context
     /// <https://fetch.spec.whatwg.org/#request-keepalive-flag>
@@ -527,6 +563,7 @@ impl Request {
             headers: HeaderMap::new(),
             unsafe_request: false,
             body: None,
+            client: None,
             window: Window::Client,
             keep_alive: false,
             service_workers_mode: ServiceWorkersMode::All,
