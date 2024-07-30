@@ -2,7 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use std::cell::Cell;
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
 use base::id::PipelineId;
 use content_security_policy::{self as csp, CspList};
@@ -169,6 +171,104 @@ pub enum BodyChunkRequest {
     Error,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub enum FetchControllerState {
+    Ongoing,
+    Terminated,
+    Aborted,
+}
+
+/// <https://fetch.spec.whatwg.org/#fetch-controller>
+///
+/// A fetch controller is a struct used to enable callers of fetch to perform certain operations on
+/// it after it has started.
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct FetchController {
+    state: Cell<FetchControllerState>,
+    timing_info: Option<bool>,
+    report_timing_steps: Option<bool>,
+    serialized_abort_reason: Option<bool>,    // TODO
+    next_manual_redirect_steps: Option<bool>, // TODO
+}
+
+impl FetchController {
+    pub fn new() -> FetchController {
+        FetchController {
+            state: Cell::new(FetchControllerState::Ongoing),
+            timing_info: None,
+            report_timing_steps: None,
+            serialized_abort_reason: None,
+            next_manual_redirect_steps: None,
+        }
+    }
+
+    /// <https://fetch.spec.whatwg.org/#finalize-and-report-timing>
+    // pub fn report_timing(self, global: &GlobalScope) {
+    //     todo!()
+    // }
+
+    /// <https://fetch.spec.whatwg.org/#fetch-controller-process-the-next-manual-redirect>
+    pub fn process_next_manual_redirect(&self) {
+        todo!()
+    }
+
+    /// <https://fetch.spec.whatwg.org/#extract-full-timing-info>
+    pub fn extract_full_timing_info(&self) {
+        todo!()
+    }
+
+    pub fn abort(&self, _error: Option<bool>) {
+        self.state.set(FetchControllerState::Aborted);
+    }
+
+    /// <https://fetch.spec.whatwg.org/#fetch-controller-terminate>
+    pub fn terminate(&self) {
+        self.state.set(FetchControllerState::Terminated);
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct FetchRecordRequest {
+    keep_alive: bool,
+    done_flag: Option<bool>,
+}
+
+/// <https://fetch.spec.whatwg.org/#concept-fetch-record>
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct FetchRecord {
+    request: FetchRecordRequest,
+    controller: FetchController,
+}
+
+/// <https://fetch.spec.whatwg.org/#fetch-groups>
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct FetchGroup(Vec<FetchRecord>);
+
+impl FetchGroup {
+    /// <https://fetch.spec.whatwg.org/#concept-fetch-group-terminate>
+    ///
+    /// When a fetch group is terminated, for each associated fetch record whose fetch record’s
+    /// controller is non-null, and whose request’s done flag is unset or keepalive is false,
+    /// terminate the fetch record’s controller.
+    pub fn terminate(&self) {
+        self.0.iter().for_each(|record| {
+            if record.request.done_flag.is_none() && record.request.keep_alive == false {
+                record.controller.terminate();
+            }
+        });
+    }
+}
+
+impl Default for FetchGroup {
+    fn default() -> FetchGroup {
+        FetchGroup(Vec::new())
+    }
+}
+
+/// An unique id for environment
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct EnvironmentId(pub Uuid);
+
 /// A partial implementation of of the environment settings object. There are additional properties
 /// provided directly to the request which are candidates to be moved into this struct, in addition
 /// to other properties which are yet to be implemented.
@@ -176,6 +276,8 @@ pub enum BodyChunkRequest {
 /// <https://html.spec.whatwg.org/multipage/#environment-settings-object>
 #[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
 pub struct EnvironmentSettingsObject {
+    /// An opaque string that uniquely identifies this environment.
+    pub environment_id: EnvironmentId,
     /// An origin used in security checks
     ///
     /// <https://html.spec.whatwg.org/multipage/#concept-settings-object-origin>
@@ -185,13 +287,19 @@ pub struct EnvironmentSettingsObject {
     ///
     /// <https://html.spec.whatwg.org/multipage/#concept-environment-creation-url>
     pub creation_url: Option<ServoUrl>,
+    /// Each environment settings object has an associated fetch group.
+    ///
+    /// <https://fetch.spec.whatwg.org/#fetch-groups>
+    pub fetch_group: FetchGroup,
 }
 
 impl EnvironmentSettingsObject {
     pub fn new(origin: Origin, creation_url: Option<ServoUrl>) -> EnvironmentSettingsObject {
         EnvironmentSettingsObject {
+            environment_id: EnvironmentId(Uuid::new_v4()),
             origin,
             creation_url,
+            fetch_group: FetchGroup::default(),
         }
     }
 }
@@ -546,6 +654,8 @@ pub struct Request {
     pub https_state: HttpsState,
     /// Servo internal: if crash details are present, trigger a crash error page with these details.
     pub crash: Option<String>,
+    /// https://fetch.spec.whatwg.org/#done-flag
+    pub done_flag: Option<bool>,
 }
 
 impl Request {
@@ -588,6 +698,7 @@ impl Request {
             csp_list: None,
             https_state,
             crash: None,
+            done_flag: None,
         }
     }
 
