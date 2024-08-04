@@ -626,6 +626,8 @@ where
                 self.compositor.composite();
             },
             EmbedderEvent::AllowNavigationResponse(pipeline_id, allowed) => {
+                warn!("EmbedderEvent::AllowNavigationResponse");
+
                 let msg = ConstellationMsg::AllowNavigationResponse(pipeline_id, allowed);
                 if let Err(e) = self.constellation_chan.send(msg) {
                     warn!(

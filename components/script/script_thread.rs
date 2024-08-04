@@ -1001,6 +1001,12 @@ impl ScriptThread {
         mut load_data: LoadData,
         replace: HistoryEntryReplacement,
     ) {
+        warn!(
+            "IN SCRIPT_THREAD_NAVIGATE: browsing_context: {:?}",
+            browsing_context
+        );
+        warn!("IN SCRIPT_THREAD_NAVIGATE: pipeline_id: {:?}", pipeline_id);
+
         SCRIPT_THREAD_ROOT.with(|root| {
             let script_thread = match root.get() {
                 None => return,
@@ -1030,16 +1036,19 @@ impl ScriptThread {
                         }
                     }
                 });
+
                 global
                     .dom_manipulation_task_source()
                     .queue(task, global.upcast())
-                    .expect("Enqueing navigate js task on the DOM manipulation task source failed");
+                    .expect("Enqueuing navigate js task on the DOM manipulation task source failed");
             } else {
                 if let Some(ref sender) = script_thread.devtools_chan {
                     let _ = sender.send(ScriptToDevtoolsControlMsg::Navigate(
                         browsing_context, NavigationState::Start(load_data.url.clone())
                     ));
                 }
+
+                warn!("ENQUEUING TASK: {:?}", pipeline_id);
 
                 script_thread
                     .script_sender

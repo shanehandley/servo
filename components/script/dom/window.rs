@@ -2276,6 +2276,8 @@ impl Window {
 
         let pipeline_id = self.upcast::<GlobalScope>().pipeline_id();
 
+        warn!("PIPELINE_ID IN WINDOW: {:?}", pipeline_id);
+
         // Step 4 and 5
         let window_proxy = self.window_proxy();
         if let Some(active) = window_proxy.currently_active() {
@@ -2287,6 +2289,12 @@ impl Window {
         // Step 8
         if doc.prompt_to_unload(false) {
             let window_proxy = self.window_proxy();
+
+            warn!(
+                "===== BROWSING CONTEXT ID IN WINDOW: {:?}",
+                window_proxy.browsing_context_id()
+            );
+
             if window_proxy.parent().is_some() {
                 // Step 10
                 // If browsingContext is a nested browsing context,

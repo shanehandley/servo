@@ -1357,7 +1357,11 @@ where
             // If there is already a pending page (self.pending_changes), it will not be overridden;
             // However, if the id is not encompassed by another change, it will be.
             FromCompositorMsg::AllowNavigationResponse(pipeline_id, allowed) => {
+                // warn!("FromCompositorMsg::AllowNavigationResponse: {:?} {:?}", pipeline_id, allowed);
+
                 let pending = self.pending_approval_navigations.remove(&pipeline_id);
+
+                // warn!("pending: {:?}", pending);
 
                 let top_level_browsing_context_id = match self.pipelines.get(&pipeline_id) {
                     Some(pipeline) => pipeline.top_level_browsing_context_id,
@@ -1656,6 +1660,9 @@ where
             },
             // Ask the embedder for permission to load a new page.
             FromScriptMsg::LoadUrl(load_data, replace) => {
+                // warn!("HANDLING LOADURL MESSAGE");
+                // warn!("source_pipeline_id: {:?}", source_pipeline_id);
+
                 self.schedule_navigation(source_top_ctx_id, source_pipeline_id, load_data, replace);
             },
             FromScriptMsg::AbortLoadUrl => {
@@ -2555,7 +2562,7 @@ where
     }
 
     fn handle_exit(&mut self) {
-        debug!("Handling exit.");
+        warn!("Handling exit.");
 
         // TODO: add a timer, which forces shutdown if threads aren't responsive.
         if self.shutting_down {
@@ -2589,7 +2596,7 @@ where
             .map(|browsing_context| browsing_context.id)
             .collect();
         for browsing_context_id in browsing_context_ids {
-            debug!(
+            warn!(
                 "{}: Removing top-level browsing context",
                 browsing_context_id
             );
@@ -2598,12 +2605,12 @@ where
 
         // Close any pending changes and pipelines
         while let Some(pending) = self.pending_changes.pop() {
-            debug!(
+            warn!(
                 "{}: Removing pending browsing context",
                 pending.browsing_context_id
             );
             self.close_browsing_context(pending.browsing_context_id, ExitPipelineMode::Normal);
-            debug!("{}: Removing pending pipeline", pending.new_pipeline_id);
+            warn!("{}: Removing pending pipeline", pending.new_pipeline_id);
             self.close_pipeline(
                 pending.new_pipeline_id,
                 DiscardBrowsingContext::Yes,
@@ -3003,7 +3010,9 @@ where
         &mut self,
         top_level_browsing_context_id: TopLevelBrowsingContextId,
     ) {
-        debug!("{top_level_browsing_context_id}: Closing");
+        warn!("handle_close_top_level_browsing_context");
+        warn!("{top_level_browsing_context_id}: Closing");
+
         let browsing_context_id = BrowsingContextId::from(top_level_browsing_context_id);
         let browsing_context =
             self.close_browsing_context(browsing_context_id, ExitPipelineMode::Normal);
@@ -3421,6 +3430,8 @@ where
         load_data: LoadData,
         replace: HistoryEntryReplacement,
     ) {
+        warn!("schedule navigation");
+
         match self.pending_approval_navigations.entry(source_id) {
             Entry::Occupied(_) => {
                 return warn!(
@@ -3432,6 +3443,9 @@ where
                 let _ = entry.insert((load_data.clone(), replace));
             },
         };
+
+        warn!("SENDING EmbedderMsg::AllowNavigationRequest");
+
         // Allow the embedder to handle the url itself
         let msg = (
             Some(top_level_browsing_context_id),
@@ -3447,14 +3461,14 @@ where
         load_data: LoadData,
         replace: HistoryEntryReplacement,
     ) -> Option<PipelineId> {
-        debug!(
-            "{}: Loading ({}replacing): {}",
+        warn!(
+            "{}: Loading ({}replacing): {:?}",
             source_id,
             match replace {
                 HistoryEntryReplacement::Enabled => "",
                 HistoryEntryReplacement::Disabled => "not ",
             },
-            load_data.url,
+            load_data,
         );
         // If this load targets an iframe, its framing element may exist
         // in a separate script thread than the framed document that initiated
@@ -5131,7 +5145,21 @@ where
         browsing_context_id: BrowsingContextId,
         exit_mode: ExitPipelineMode,
     ) -> Option<BrowsingContext> {
-        debug!("{}: Closing", browsing_context_id);
+        warn!("close_browsing_context");
+        warn!("{}: Closing", browsing_context_id);
+
+        // If any of this browsing context's pipelines have pending navigations, avoid closing it
+        if let Some(browsing_context) = self.browsing_contexts.get(&browsing_context_id) {
+            if browsing_context
+                .pipelines
+                .iter()
+                .any(|pipeline| self.pending_approval_navigations.get(&pipeline).is_some())
+            {
+                warn!("Not closing browsing context because a pipeline has pending navigations");
+
+                return None;
+            }
+        };
 
         self.close_browsing_context_children(
             browsing_context_id,
@@ -5160,7 +5188,7 @@ where
                 Some(parent_pipeline) => parent_pipeline.remove_child(browsing_context_id),
             };
         }
-        debug!("{}: Closed", browsing_context_id);
+        warn!("{}: Closed", browsing_context_id);
         Some(browsing_context)
     }
 
@@ -5240,7 +5268,18 @@ where
         dbc: DiscardBrowsingContext,
         exit_mode: ExitPipelineMode,
     ) {
-        debug!("{}: Closing", pipeline_id);
+        warn!("{}: Closing Pipeline", pipeline_id);
+
+        // Check if we have pending navigation requests for this pipeline
+        let pending = self.pending_approval_navigations.get(&pipeline_id);
+
+        warn!("Pending during closure: {:?}", pending);
+
+        if pending.is_some() {
+            warn!("Not closing pipeline because it has pending approval navigations");
+
+            return;
+        }
 
         // Sever connection to browsing context
         let browsing_context_id = self
@@ -5269,6 +5308,11 @@ where
 
         // Remove any child browsing contexts
         for child_browsing_context in &browsing_contexts_to_close {
+            warn!(
+                "Removing child browsing contexts: {:?}",
+                child_browsing_context
+            );
+
             self.close_browsing_context(*child_browsing_context, exit_mode);
         }
 
