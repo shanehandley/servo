@@ -12,7 +12,7 @@ use crate::dom::bindings::codegen::Bindings::ClipboardEventBinding::{
 use crate::dom::bindings::codegen::Bindings::EventBinding::Event_Binding::EventMethods;
 use crate::dom::bindings::error::Fallible;
 use crate::dom::bindings::inheritance::Castable;
-use crate::dom::bindings::reflector::{reflect_dom_object, reflect_dom_object_with_proto};
+use crate::dom::bindings::reflector::reflect_dom_object_with_proto;
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::datatransfer::DataTransfer;
@@ -27,12 +27,8 @@ pub struct ClipboardEvent {
 }
 
 impl ClipboardEvent {
-    pub fn new_uninitialized(global: &Window) -> DomRoot<ClipboardEvent> {
-        reflect_dom_object(Box::new(ClipboardEvent::new_inherited(None)), global)
-    }
-
+    /// <https://w3c.github.io/clipboard-apis/#clipboardevent>
     fn new_inherited(init: Option<&ClipboardEventInit>) -> ClipboardEvent {
-        // <https://w3c.github.io/clipboard-apis/#clipboardevent>
         let clipboard_data = init
             .unwrap_or(&ClipboardEventInit::empty())
             .clipboardData
@@ -79,10 +75,12 @@ impl ClipboardEvent {
 
 #[allow(non_snake_case)]
 impl ClipboardEventMethods for ClipboardEvent {
+    /// <https://w3c.github.io/clipboard-apis/#clipboardevent-clipboarddata>
     fn GetClipboardData(&self) -> Option<DomRoot<DataTransfer>> {
         self.clipboard_data.clone()
     }
 
+    /// <https://dom.spec.whatwg.org/#dom-event-istrusted>
     fn IsTrusted(&self) -> bool {
         self.event.IsTrusted()
     }
