@@ -19,6 +19,7 @@ use crate::dom::types::MouseEvent;
 use crate::dom::window::Window;
 
 #[dom_struct]
+/// <https://html.spec.whatwg.org/multipage/#dragevent>
 pub struct DragEvent {
     mouseevent: MouseEvent,
     data_transfer: Option<DomRoot<DataTransfer>>,
@@ -29,8 +30,8 @@ impl DragEvent {
         reflect_dom_object(Box::new(DragEvent::new_inherited(None)), global)
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#drageventinit>
     fn new_inherited(init: Option<&DragEventInit>) -> DragEvent {
-        // <https://html.spec.whatwg.org/multipage/dnd.html#drageventinit>
         let data_transfer = init.unwrap_or(&DragEventInit::empty()).dataTransfer.clone();
 
         DragEvent {
@@ -74,10 +75,12 @@ impl DragEvent {
 
 #[allow(non_snake_case)]
 impl DragEventMethods for DragEvent {
+    /// <https://html.spec.whatwg.org/multipage/#dom-dragevent-datatransfer>
     fn GetDataTransfer(&self) -> Option<DomRoot<DataTransfer>> {
         self.data_transfer.clone()
     }
 
+    /// <https://dom.spec.whatwg.org/#dom-event-istrusted>
     fn IsTrusted(&self) -> bool {
         self.mouseevent.IsTrusted()
     }

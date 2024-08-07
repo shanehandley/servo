@@ -72,16 +72,19 @@ impl ClipboardItem {
 
 #[allow(non_snake_case)]
 impl ClipboardItemMethods for ClipboardItem {
+    /// <https://w3c.github.io/clipboard-apis/#dom-clipboarditem-presentationstyle>
     fn PresentationStyle(&self) -> PresentationStyle {
         self.presentation_style.clone()
     }
 
+    /// <https://w3c.github.io/clipboard-apis/#dom-clipboarditem-types>
     fn Types(&self, cx: SafeJSContext) -> JSVal {
         let items: Vec<String> = vec![];
 
         to_frozen_array(&items.as_slice(), cx)
     }
 
+    /// <https://w3c.github.io/clipboard-apis/#dom-clipboarditem-gettype>
     fn GetType(&self, type_: DOMString) -> Rc<Promise> {
         Promise::new(&self.global())
     }

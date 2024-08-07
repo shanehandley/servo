@@ -78,7 +78,7 @@ impl DataTransferItem {
 
 #[allow(non_snake_case)]
 impl DataTransferItemMethods for DataTransferItem {
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitem-getasstring
+    /// <https://html.spec.whatwg.org/multipage/#dom-datatransferitem-getasstring>
     fn GetAsString(&self, callback: Option<Rc<FunctionStringCallback>>) {
         if let (Some(callback), &DataTransferItemValue::String(ref text)) = (callback, &self.value)
         {
@@ -86,17 +86,17 @@ impl DataTransferItemMethods for DataTransferItem {
         }
     }
 
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitem-getasfile
+    /// <https://html.spec.whatwg.org/multipage/#dom-datatransferitem-getasfile>
     fn GetAsFile(&self) -> Option<DomRoot<File>> {
         self.get_as_file()
     }
 
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitem-kind
+    /// <https://html.spec.whatwg.org/multipage/#dom-datatransferitem-kind>
     fn Kind(&self) -> DOMString {
         self.kind()
     }
 
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitem-type
+    /// <https://html.spec.whatwg.org/multipage/#dom-datatransferitem-type>
     fn Type(&self) -> DOMString {
         self.type_.clone()
     }

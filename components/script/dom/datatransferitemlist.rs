@@ -18,7 +18,7 @@ use crate::dom::datatransferitem::{DataTransferItem, DataTransferItemValue};
 use crate::dom::file::File;
 use crate::dom::window::Window;
 
-// <https://html.spec.whatwg.org/multipage/dnd.html#drag-data-store-mode>
+// <https://html.spec.whatwg.org/multipage/#drag-data-store-mode>
 #[derive(Clone, JSTraceable, MallocSizeOf, PartialEq)]
 pub enum DataTransferMode {
     #[allow(dead_code)]
@@ -27,7 +27,7 @@ pub enum DataTransferMode {
     Protected,
 }
 
-// https://html.spec.whatwg.org/multipage/dnd.html#datatransferitemlist
+// https://html.spec.whatwg.org/multipage/#datatransferitemlist
 #[dom_struct]
 pub struct DataTransferItemList {
     reflector_: Reflector,
@@ -138,7 +138,7 @@ impl DataTransferItemList {
         files
     }
 
-    // <https://html.spec.whatwg.org/multipage/dnd.html#concept-datatransfer-types>
+    // <https://html.spec.whatwg.org/multipage/#concept-datatransfer-types>
     fn regenerate_types(&self) {
         // Step 1 & 2.1
         let mut types: Vec<DOMString> = self
@@ -174,7 +174,7 @@ impl DataTransferItemList {
     // The current edit mode, describing the level of access to internal data. The access provided
     // to internal state varies based on the user's action.
     //
-    // <https://html.spec.whatwg.org/multipage/dnd.html#dndevents>
+    // <https://html.spec.whatwg.org/multipage/#dndevents>
     pub fn get_mode(&self) -> DataTransferMode {
         self.mode.borrow().clone()
     }
@@ -188,7 +188,7 @@ impl DataTransferItemList {
 
 #[allow(non_snake_case)]
 impl DataTransferItemListMethods for DataTransferItemList {
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-add
+    // https://html.spec.whatwg.org/multipage/#dom-datatransferitemlist-add
     fn Add(
         &self,
         data: DOMString,
@@ -221,7 +221,7 @@ impl DataTransferItemListMethods for DataTransferItemList {
         return Ok(Some(self.add(item)));
     }
 
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-add
+    // https://html.spec.whatwg.org/multipage/#dom-datatransferitemlist-add
     fn Add_(&self, data: &File) -> Fallible<Option<DomRoot<DataTransferItem>>> {
         // Step 1
         if self.get_mode() != DataTransferMode::ReadWrite {
@@ -238,7 +238,7 @@ impl DataTransferItemListMethods for DataTransferItemList {
         Ok(Some(self.add(item)))
     }
 
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-remove
+    // https://html.spec.whatwg.org/multipage/#dom-datatransferitemlist-remove
     fn Remove(&self, index: u32) -> Fallible<()> {
         // Step 1
         if self.get_mode() != DataTransferMode::ReadWrite {
@@ -257,7 +257,7 @@ impl DataTransferItemListMethods for DataTransferItemList {
         Ok(())
     }
 
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-clear
+    // https://html.spec.whatwg.org/multipage/#dom-datatransferitemlist-clear
     fn Clear(&self) {
         if self.get_mode() == DataTransferMode::ReadWrite {
             // Avoid regenerating the internal types array when the item list is already empty
@@ -268,12 +268,12 @@ impl DataTransferItemListMethods for DataTransferItemList {
         }
     }
 
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-length
+    // https://html.spec.whatwg.org/multipage/#dom-datatransferitemlist-length
     fn Length(&self) -> u32 {
         u32::try_from(self.list.borrow().len()).unwrap_or(0)
     }
 
-    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransferitemlist-length
+    // https://html.spec.whatwg.org/multipage/#dom-datatransferitemlist-length
     fn IndexedGetter(&self, index: u32) -> Option<DomRoot<DataTransferItem>> {
         if let Ok(i) = usize::try_from(index) {
             return self
