@@ -14,6 +14,7 @@ function test_interfaces(interfaceNamesInGlobalScope) {
       "ByteLengthQueuingStrategy",
       "CountQueuingStrategy",
       "Crypto",
+      "DataTransferItem",
       "DataView",
       "Date",
       "Error",

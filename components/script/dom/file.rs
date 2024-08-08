@@ -124,6 +124,10 @@ impl File {
     pub fn name(&self) -> &DOMString {
         &self.name
     }
+
+    pub fn type_string(&self) -> String {
+        self.blob.type_string().clone()
+    }
 }
 
 impl FileMethods for File {
