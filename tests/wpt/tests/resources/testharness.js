@@ -2876,6 +2876,8 @@
      * message in the case errors.
      */
     Test.prototype._add_cleanup = function(callback) {
+        console.log("Test.prototype._add_cleanup called")
+
         this.cleanup_callbacks.push(callback);
     };
 
@@ -2982,6 +2984,8 @@
      * be cancelled.
      */
     Test.prototype.cleanup = function() {
+        console.log("Test.prototype.cleanup")
+
         var errors = [];
         var bad_value_count = 0;
         function on_error(e) {

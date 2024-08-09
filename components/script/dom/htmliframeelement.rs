@@ -730,6 +730,8 @@ impl VirtualMethods for HTMLIFrameElement {
     }
 
     fn unbind_from_tree(&self, context: &UnbindContext) {
+        warn!("unbind_from_tree");
+
         self.super_type().unwrap().unbind_from_tree(context);
 
         let mut blocker = self.load_blocker.borrow_mut();

@@ -1660,7 +1660,7 @@ where
             },
             // Ask the embedder for permission to load a new page.
             FromScriptMsg::LoadUrl(load_data, replace) => {
-                // warn!("HANDLING LOADURL MESSAGE");
+                warn!("FromScriptMsg::LoadUrl received: {:?}", load_data.clone());
                 // warn!("source_pipeline_id: {:?}", source_pipeline_id);
 
                 self.schedule_navigation(source_top_ctx_id, source_pipeline_id, load_data, replace);
@@ -1726,6 +1726,8 @@ where
                 self.handle_set_throttled_complete(source_pipeline_id, throttled);
             },
             FromScriptMsg::RemoveIFrame(browsing_context_id, response_sender) => {
+                warn!("Received FromScriptMsg::RemoveIFrame");
+
                 let removed_pipeline_ids = self.handle_remove_iframe_msg(browsing_context_id);
                 if let Err(e) = response_sender.send(removed_pipeline_ids) {
                     warn!("Error replying to remove iframe ({})", e);
@@ -2773,7 +2775,7 @@ where
         if self.hard_fail {
             // It's quite difficult to make Servo exit cleanly if some threads have failed.
             // Hard fail exists for test runners so we crash and that's good enough.
-            println!("Pipeline failed in hard-fail mode.  Crashing!");
+            warn!("Pipeline failed in hard-fail mode.  Crashing!");
             process::exit(1);
         }
 
@@ -2782,7 +2784,7 @@ where
             None => return,
         };
 
-        debug!(
+        warn!(
             "{}: Panic handler for top-level browsing context: {}",
             top_level_browsing_context_id, reason
         );
@@ -3430,19 +3432,19 @@ where
         load_data: LoadData,
         replace: HistoryEntryReplacement,
     ) {
-        warn!("schedule navigation");
+        warn!("schedule navigation: top_level_browsing_context_id = {:?}", top_level_browsing_context_id);
 
-        match self.pending_approval_navigations.entry(source_id) {
-            Entry::Occupied(_) => {
-                return warn!(
-                    "{}: Tried to schedule a navigation while one is already pending",
-                    source_id
-                );
-            },
-            Entry::Vacant(entry) => {
-                let _ = entry.insert((load_data.clone(), replace));
-            },
-        };
+        // match self.pending_approval_navigations.entry(source_id) {
+        //     Entry::Occupied(_) => {
+        //         return warn!(
+        //             "{}: Tried to schedule a navigation while one is already pending",
+        //             source_id
+        //         );
+        //     },
+        //     Entry::Vacant(entry) => {
+        //         let _ = entry.insert((load_data.clone(), replace));
+        //     },
+        // };
 
         warn!("SENDING EmbedderMsg::AllowNavigationRequest");
 
@@ -4272,6 +4274,8 @@ where
         &mut self,
         browsing_context_id: BrowsingContextId,
     ) -> Vec<PipelineId> {
+        warn!("handle_remove_iframe_msg will close the browsing context: {:?}", browsing_context_id);
+
         let result = self
             .all_descendant_browsing_contexts_iter(browsing_context_id)
             .flat_map(|browsing_context| browsing_context.pipelines.iter().cloned())
@@ -5275,11 +5279,11 @@ where
 
         warn!("Pending during closure: {:?}", pending);
 
-        if pending.is_some() {
-            warn!("Not closing pipeline because it has pending approval navigations");
+        // if pending.is_some() {
+        //     warn!("Not closing pipeline because it has pending approval navigations");
 
-            return;
-        }
+        //     return;
+        // }
 
         // Sever connection to browsing context
         let browsing_context_id = self
