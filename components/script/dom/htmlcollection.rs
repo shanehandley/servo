@@ -124,6 +124,7 @@ impl HTMLCollection {
         // Clear the cache if the root version is different from our cached version
         let cached_version = self.cached_version.get();
         let curr_version = self.root.inclusive_descendants_version();
+
         if curr_version != cached_version {
             // Default values for the cache
             self.cached_version.set(curr_version);
@@ -329,6 +330,7 @@ impl HTMLCollectionMethods for HTMLCollection {
             // Cache miss, calculate the length
             let length = self.elements_iter().count() as u32;
             self.cached_length.set(OptionU32::some(length));
+
             length
         }
     }

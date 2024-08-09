@@ -16,16 +16,23 @@ use crate::dom::bindings::codegen::UnionTypes::{
     HTMLElementOrLong, HTMLOptionElementOrHTMLOptGroupElement,
 };
 use crate::dom::bindings::error::{Error, ErrorResult};
+use crate::dom::bindings::import::module::UnionTypes::NodeOrString;
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::reflector::reflect_dom_object;
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
+use crate::dom::documentfragment::DocumentFragment;
 use crate::dom::element::Element;
 use crate::dom::htmlcollection::{CollectionFilter, HTMLCollection};
 use crate::dom::htmloptionelement::HTMLOptionElement;
 use crate::dom::htmlselectelement::HTMLSelectElement;
 use crate::dom::node::{document_from_node, Node};
 use crate::dom::window::Window;
+
+/// The maximum number of options which can be appended to the collection
+///
+/// <https://html.spec.whatwg.org/multipage/#the-htmloptionscollection-interface>
+const MAXIMUM_OPTIONS: u32 = 100_000;
 
 #[dom_struct]
 pub struct HTMLOptionsCollection {
@@ -56,12 +63,20 @@ impl HTMLOptionsCollection {
     fn add_new_elements(&self, count: u32) -> ErrorResult {
         let root = self.upcast().root_node();
         let document = document_from_node(&*root);
+        let fragment = DocumentFragment::new(&document);
+
+        let mut nodes: Vec<NodeOrString> = Vec::with_capacity(count.try_into().unwrap_or(0));
 
         for _ in 0..count {
             let element = HTMLOptionElement::new(local_name!("option"), None, &document, None);
-            let node = element.upcast::<Node>();
-            root.AppendChild(node)?;
+            nodes.push(NodeOrString::Node(DomRoot::from_ref(
+                element.upcast::<Node>(),
+            )));
         }
+
+        fragment.upcast::<Node>().append(nodes)?;
+        root.AppendChild(fragment.upcast::<Node>())?;
+
         Ok(())
     }
 }
@@ -129,19 +144,27 @@ impl HTMLOptionsCollectionMethods for HTMLOptionsCollection {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-htmloptionscollection-length>
     fn SetLength(&self, length: u32) {
+        // Step 1: Let current be the number of nodes represented by the collection.
         let current_length = self.upcast().Length();
+
+        // Step 2.2 & 3.1: Let n be value − current.
         let delta = length as i32 - current_length as i32;
+
         match delta.cmp(&0) {
+            // Step 2: If the given value is greater than current, then:
+            // Step 2.1: If the given value is greater than 100,000, then return.
+            Ordering::Greater if length <= MAXIMUM_OPTIONS => {
+                // new length is higher - adding new option elements
+                self.add_new_elements(delta as u32).unwrap();
+            },
+            // Step 3: If the given value is less than current, then:
             Ordering::Less => {
-                // new length is lower - deleting last option elements
+                // Step 3.2: Remove the last n nodes in the collection from their parent nodes.
                 for index in (length..current_length).rev() {
                     self.Remove(index as i32)
                 }
             },
-            Ordering::Greater => {
-                // new length is higher - adding new option elements
-                self.add_new_elements(delta as u32).unwrap();
-            },
+
             _ => {},
         }
     }
