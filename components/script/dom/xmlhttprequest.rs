@@ -26,7 +26,9 @@ use js::rust::wrappers::JS_ParseJSON;
 use js::rust::HandleObject;
 use js::typedarray::{ArrayBuffer, ArrayBufferU8};
 use mime::{self, Mime, Name};
-use net_traits::request::{CredentialsMode, Destination, Referrer, RequestBuilder, RequestMode};
+use net_traits::request::{
+    CredentialsMode, Destination, InitiatorType, Referrer, RequestBuilder, RequestMode,
+};
 use net_traits::CoreResourceMsg::Fetch;
 use net_traits::{
     trim_http_whitespace, FetchChannels, FetchMetadata, FetchResponseListener, FilteredMetadata,
@@ -61,7 +63,6 @@ use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::headers::{extract_mime_type, is_forbidden_header_name};
 use crate::dom::node::Node;
-use crate::dom::performanceresourcetiming::InitiatorType;
 use crate::dom::progressevent::ProgressEvent;
 use crate::dom::readablestream::ReadableStream;
 use crate::dom::servoparser::ServoParser;

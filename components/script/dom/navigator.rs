@@ -11,9 +11,8 @@ use http::header::CONTENT_TYPE;
 use http::{HeaderMap, Method};
 use ipc_channel::ipc;
 use js::jsval::JSVal;
-use lazy_static::lazy_static;
 use net_traits::request::{
-    is_cors_safelisted_request_header, CredentialsMode, RequestBuilder, RequestMode,
+    is_cors_safelisted_request_header, CredentialsMode, InitiatorType, RequestBuilder, RequestMode,
 };
 use servo_url::ServoUrl;
 
@@ -23,7 +22,7 @@ use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::codegen::Bindings::NavigatorBinding::NavigatorMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
 use crate::dom::bindings::codegen::Bindings::XMLHttpRequestBinding::BodyInit;
-use crate::dom::bindings::codegen::UnionTypes::ReadableStreamOrXMLHttpRequestBodyInit;
+use crate::dom::bindings::codegen::UnionTypes::ReadableStreamOrBlobOrArrayBufferViewOrArrayBufferOrFormDataOrStringOrURLSearchParams;
 use crate::dom::bindings::error::{Error, Fallible};
 use crate::dom::bindings::reflector::{reflect_dom_object, DomObject, Reflector};
 use crate::dom::bindings::root::{DomRoot, MutNullableDom};
@@ -304,7 +303,9 @@ impl NavigatorMethods for Navigator {
     fn SendBeacon(
         &self,
         url: USVString,
-        data: Option<ReadableStreamOrXMLHttpRequestBodyInit>,
+        data: Option<
+            ReadableStreamOrBlobOrArrayBufferViewOrArrayBufferOrFormDataOrStringOrURLSearchParams,
+        >,
     ) -> Fallible<bool> {
         let global = self.global();
         let window = global.as_window();
@@ -400,14 +401,14 @@ impl NavigatorMethods for Navigator {
         // let referrer = global.get_referrer();
 
         // Step 7: A new request, initialized according to the spec
-        // TODO: Mark as a keepalive request once supported
-        // TODO: Include initiator_type once supported
+        // TODO: Use a keepalive request once supported
         let request = RequestBuilder::new(parsed_url, global.get_referrer())
             .method(Method::POST)
             .mode(request_mode)
             .body(request_body.map(|e| e.into_net_request_body().0))
             .credentials_mode(CredentialsMode::Include)
             .headers(header_list)
+            .initiator_type(Some(InitiatorType::Beacon))
             .origin(origin);
 
         // This is a send and forget request, so a response listener is omitted

@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use dom_struct::dom_struct;
+use net_traits::request::InitiatorType;
 use net_traits::ResourceFetchTiming;
 use servo_url::ServoUrl;
 
@@ -22,19 +23,10 @@ use crate::dom::performanceentry::PerformanceEntry;
 // TODO Cross origin resources MUST BE INCLUDED as PerformanceResourceTiming objects
 // https://w3c.github.io/resource-timing/#sec-cross-origin-resources
 
-// TODO CSS, Beacon
-#[derive(Debug, JSTraceable, MallocSizeOf, PartialEq)]
-pub enum InitiatorType {
-    LocalName(String),
-    Navigation,
-    XMLHttpRequest,
-    Fetch,
-    Other,
-}
-
 #[dom_struct]
 pub struct PerformanceResourceTiming {
     entry: PerformanceEntry,
+    #[no_trace]
     initiator_type: InitiatorType,
     next_hop: Option<DOMString>,
     worker_start: f64,
@@ -160,6 +152,7 @@ impl PerformanceResourceTimingMethods for PerformanceResourceTiming {
     // https://w3c.github.io/resource-timing/#dom-performanceresourcetiming-initiatortype
     fn InitiatorType(&self) -> DOMString {
         match self.initiator_type {
+            InitiatorType::Beacon => DOMString::from("beacon"),
             InitiatorType::LocalName(ref n) => DOMString::from(n.clone()),
             InitiatorType::Navigation => DOMString::from("navigation"),
             InitiatorType::XMLHttpRequest => DOMString::from("xmlhttprequest"),

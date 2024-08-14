@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use ipc_channel::ipc;
 use ipc_channel::router::ROUTER;
 use net_traits::request::{
-    CorsSettings, CredentialsMode, Destination, Referrer, Request as NetTraitsRequest,
-    RequestBuilder, RequestMode, ServiceWorkersMode,
+    CorsSettings, CredentialsMode, Destination, InitiatorType, Referrer,
+    Request as NetTraitsRequest, RequestBuilder, RequestMode, ServiceWorkersMode,
 };
 use net_traits::CoreResourceMsg::Fetch as NetTraitsFetch;
 use net_traits::{
@@ -30,7 +30,6 @@ use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::trace::RootedTraceableBox;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::headers::Guard;
-use crate::dom::performanceresourcetiming::InitiatorType;
 use crate::dom::promise::Promise;
 use crate::dom::request::Request;
 use crate::dom::response::Response;
@@ -128,6 +127,7 @@ fn request_init_from_request(request: NetTraitsRequest) -> RequestBuilder {
         url_list: vec![],
         parser_metadata: request.parser_metadata,
         initiator: request.initiator,
+        initiator_type: request.initiator_type,
         csp_list: None,
         https_state: request.https_state,
         response_tainting: request.response_tainting,

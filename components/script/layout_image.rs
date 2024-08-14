@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use ipc_channel::ipc;
 use ipc_channel::router::ROUTER;
 use net_traits::image_cache::{ImageCache, PendingImageId};
-use net_traits::request::{Destination, RequestBuilder as FetchRequestInit};
+use net_traits::request::{Destination, InitiatorType, RequestBuilder as FetchRequestInit};
 use net_traits::{
     FetchMetadata, FetchResponseListener, FetchResponseMsg, NetworkError, ResourceFetchTiming,
     ResourceTimingType,
@@ -24,7 +24,6 @@ use crate::dom::bindings::root::DomRoot;
 use crate::dom::document::Document;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::node::{document_from_node, Node};
-use crate::dom::performanceresourcetiming::InitiatorType;
 use crate::network_listener::{self, NetworkListener, PreInvoke, ResourceTimingListener};
 
 struct LayoutImageContext {

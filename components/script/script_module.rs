@@ -35,7 +35,8 @@ use js::rust::{
 };
 use mime::Mime;
 use net_traits::request::{
-    CredentialsMode, Destination, ParserMetadata, Referrer, RequestBuilder, RequestMode,
+    CredentialsMode, Destination, InitiatorType, ParserMetadata, Referrer, RequestBuilder,
+    RequestMode,
 };
 use net_traits::{
     CoreResourceMsg, FetchChannels, FetchMetadata, FetchResponseListener, IpcSend, Metadata,
@@ -65,7 +66,6 @@ use crate::dom::htmlscriptelement::{
     HTMLScriptElement, ScriptId, ScriptOrigin, ScriptType, SCRIPT_JS_MIMES,
 };
 use crate::dom::node::document_from_node;
-use crate::dom::performanceresourcetiming::InitiatorType;
 use crate::dom::promise::Promise;
 use crate::dom::promisenativehandler::{Callback, PromiseNativeHandler};
 use crate::dom::window::Window;
