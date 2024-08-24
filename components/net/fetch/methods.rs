@@ -21,9 +21,7 @@ use mime::{self, Mime};
 use net_traits::filemanager_thread::{FileTokenCheck, RelativePos};
 use net_traits::http_status::HttpStatus;
 use net_traits::request::{
-    is_cors_safelisted_method, is_cors_safelisted_request_header, BodyChunkRequest,
-    BodyChunkResponse, CredentialsMode, Destination, Origin, RedirectMode, Referrer, Request,
-    RequestMode, ResponseTainting, Window,
+    is_cors_safelisted_method, is_cors_safelisted_request_header, BodyChunkRequest, BodyChunkResponse, CredentialsMode, Destination, FetchRecord, Origin, RedirectMode, Referrer, Request, RequestMode, ResponseTainting, Window
 };
 use net_traits::response::{Response, ResponseBody, ResponseType};
 use net_traits::{
@@ -114,23 +112,29 @@ pub async fn fetch(request: &mut Request, target: Target<'_>, context: &FetchCon
     fetch_with_cors_cache(request, &mut CorsCache::default(), target, context).await;
 }
 
+/// Steps 9 onwards from:
+///
+/// <https://fetch.spec.whatwg.org/#concept-fetch>
 pub async fn fetch_with_cors_cache(
     request: &mut Request,
     cache: &mut CorsCache,
     target: Target<'_>,
     context: &FetchContext,
 ) {
-    // Step 1.
+    // Step 9: If request’s window is "client", then set request’s window to request’s client, if
+    // request’s client’s global object is a Window object; otherwise "no-window".
     if request.window == Window::Client {
         // TODO: Set window to request's client object if client is a Window object
     } else {
         request.window = Window::NoWindow;
     }
 
-    // Step 2.
+    // Step 10: If request’s origin is "client", then set request’s origin to request’s client’s
+    // origin.
     if request.origin == Origin::Client {
-        // TODO: set request's origin to request's client's origin
-        unimplemented!()
+        if let Some(ref settings_object) = request.client {
+            request.origin = settings_object.origin.clone();
+        }
     }
 
     // Step 3.
@@ -145,9 +149,10 @@ pub async fn fetch_with_cors_cache(
     // Step 6.
     // TODO: handle client hints headers.
 
-    // Step 7.
+    // Step 16: If request is a subresource request, then:
     if request.is_subresource_request() {
-        // TODO: handle client hints headers.
+        // Steps 16.1 and 16.2 are handled in the request code to avoid moving here
+        request.append_fetch_record();
     }
 
     // Step 8.

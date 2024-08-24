@@ -21,7 +21,7 @@ use net_traits::request::{
     RequestMode as NetTraitsRequestMode, Window,
 };
 use net_traits::ReferrerPolicy as MsgReferrerPolicy;
-use servo_url::ServoUrl;
+use servo_url::{ImmutableOrigin, MutableOrigin, ServoUrl};
 
 use crate::body::{consume_body, BodyMixin, BodyType, Extractable};
 use crate::dom::bindings::cell::DomRefCell;
@@ -206,15 +206,15 @@ impl RequestMethods for Request {
             },
         }
 
-        // Step 7
-        // TODO: `entry settings object` is not implemented yet.
-        let origin = base_url.origin();
+        // Step 7: TODO this is a generic origin, but it should be Immutable/Csp::Origin/Something...
+        let origin = global.environment_settings_object().origin;
 
         // Step 8
         let mut window = Window::Client;
 
-        // Step 9
-        // TODO: `environment settings object` is not implemented in Servo yet.
+        // TODO: Implement environment settings object in Window::Client
+        // Step 9: If request’s window is an environment settings object and its origin is same
+        // origin with origin, then set window to request’s window.
 
         // Step 10
         if !init.window.handle().is_null_or_undefined() {
@@ -233,7 +233,8 @@ impl RequestMethods for Request {
         request.headers = temporary_request.headers.clone();
         request.unsafe_request = true;
         request.window = window;
-        // TODO: `entry settings object` is not implemented in Servo yet.
+        request.client = Some(global.environment_settings_object());
+        request.client = temporary_request.client;
         request.origin = Origin::Client;
         request.referrer = temporary_request.referrer;
         request.referrer_policy = temporary_request.referrer_policy;
@@ -287,7 +288,7 @@ impl RequestMethods for Request {
                     if (parsed_referrer.cannot_be_a_base() &&
                         parsed_referrer.scheme() == "about" &&
                         parsed_referrer.path() == "client") ||
-                        parsed_referrer.origin() != origin
+                        parsed_referrer.origin().same_origin(&global.origin())
                     {
                         request.referrer = global.get_referrer();
                     } else {
@@ -350,7 +351,10 @@ impl RequestMethods for Request {
             request.integrity_metadata = integrity;
         }
 
-        // Step 24 TODO: "If init["keepalive"] exists..."
+        // Step 24: If init["keepalive"] exists, then set request’s keepalive to it.
+        if let Some(init_keepalive) = init.keepalive.as_ref() {
+            request.keep_alive = init_keepalive.clone()
+        }
 
         // Step 25.1
         if let Some(init_method) = init.method.as_ref() {
@@ -523,6 +527,89 @@ impl RequestMethods for Request {
         Ok(r)
     }
 
+impl Request {
+    fn from_net_request(
+        global: &GlobalScope,
+        proto: Option<HandleObject>,
+        net_request: NetTraitsRequest,
+        can_gc: CanGc,
+    ) -> DomRoot<Request> {
+        let r = Request::new(global, proto, net_request.current_url(), can_gc);
+        *r.request.borrow_mut() = net_request;
+        r
+    }
+
+    fn clone_from(r: &Request, can_gc: CanGc) -> Fallible<DomRoot<Request>> {
+        let req = r.request.borrow();
+        let url = req.url();
+        let headers_guard = r.Headers().get_guard();
+        let r_clone = Request::new(&r.global(), None, url, can_gc);
+        r_clone.request.borrow_mut().pipeline_id = req.pipeline_id;
+        {
+            let mut borrowed_r_request = r_clone.request.borrow_mut();
+            borrowed_r_request.origin = req.origin.clone();
+        }
+        *r_clone.request.borrow_mut() = req.clone();
+        r_clone.Headers().copy_from_headers(r.Headers())?;
+        r_clone.Headers().set_guard(headers_guard);
+        Ok(r_clone)
+    }
+
+    pub fn get_request(&self) -> NetTraitsRequest {
+        self.request.borrow().clone()
+    }
+}
+
+fn net_request_from_global(global: &GlobalScope, url: ServoUrl) -> NetTraitsRequest {
+    let origin = Origin::Origin(global.get_url().origin());
+    let https_state = global.get_https_state();
+    let pipeline_id = global.pipeline_id();
+    let referrer = global.get_referrer();
+    NetTraitsRequest::new(url, Some(origin), referrer, Some(pipeline_id), https_state)
+}
+
+// https://fetch.spec.whatwg.org/#concept-method-normalize
+fn normalize_method(m: &str) -> Result<HttpMethod, InvalidMethod> {
+    match_ignore_ascii_case! { m,
+        "delete" => return Ok(HttpMethod::DELETE),
+        "get" => return Ok(HttpMethod::GET),
+        "head" => return Ok(HttpMethod::HEAD),
+        "options" => return Ok(HttpMethod::OPTIONS),
+        "post" => return Ok(HttpMethod::POST),
+        "put" => return Ok(HttpMethod::PUT),
+        _ => (),
+    }
+    debug!("Method: {:?}", m);
+    HttpMethod::from_str(m)
+}
+
+// https://fetch.spec.whatwg.org/#concept-method
+fn is_method(m: &ByteString) -> bool {
+    m.as_str().is_some()
+}
+
+// https://fetch.spec.whatwg.org/#cors-safelisted-method
+fn is_cors_safelisted_method(m: &HttpMethod) -> bool {
+    m == HttpMethod::GET || m == HttpMethod::HEAD || m == HttpMethod::POST
+}
+
+// https://url.spec.whatwg.org/#include-credentials
+fn includes_credentials(input: &ServoUrl) -> bool {
+    !input.username().is_empty() || input.password().is_some()
+}
+
+// https://fetch.spec.whatwg.org/#concept-body-disturbed
+fn request_is_disturbed(input: &Request) -> bool {
+    input.is_disturbed()
+}
+
+// https://fetch.spec.whatwg.org/#concept-body-locked
+fn request_is_locked(input: &Request) -> bool {
+    input.is_locked()
+}
+
+#[allow(non_snake_case)]
+impl RequestMethods for Request {
     // https://fetch.spec.whatwg.org/#dom-request-method
     fn Method(&self) -> ByteString {
         let r = self.request.borrow();

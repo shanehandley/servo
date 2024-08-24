@@ -38,6 +38,7 @@ dictionary RequestInit {
   RequestCache cache;
   RequestRedirect redirect;
   DOMString integrity;
+  boolean keepalive;
   any window; // can only be set to null
 };
 
