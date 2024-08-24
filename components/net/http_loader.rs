@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use core::convert::Infallible;
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use std::sync::{Arc as StdArc, Condvar, Mutex, RwLock};
@@ -1104,9 +1105,6 @@ async fn http_network_or_cache_fetch(
     done_chan: &mut DoneChannel,
     context: &FetchContext,
 ) -> Response {
-    // Step 3: Let httpRequest be null.
-    let mut http_request;
-
     // Step 4: Let response be null.
     let mut response: Option<Response> = None;
 
@@ -1117,10 +1115,13 @@ async fn http_network_or_cache_fetch(
     // httpFetchParams to fetchParams and httpRequest to request.
     let request_has_no_window = request.window == RequestWindow::NoWindow;
 
+    let mut http_request;
+
     let http_request = if request_has_no_window && request.redirect_mode == RedirectMode::Error {
         request
     } else {
-        // Step 8.2.1: Set httpRequest to a clone of request.
+        // Step 8.2: Set httpRequest to a clone of request.
+        // Step 8.2.1, .2.2 and .2.3 and 2.4
         http_request = request.clone();
 
         &mut http_request
@@ -1150,17 +1151,43 @@ async fn http_network_or_cache_fetch(
         // Step 8.7: If httpRequest’s body is null and httpRequest’s method is `POST` or `PUT`, then
         // set contentLengthHeaderValue to `0`.
         None => match http_request.method {
+            // Step 8.7: If httpRequest’s body is null and httpRequest’s method is `POST` or `PUT`,
+            // then set contentLengthHeaderValue to `0`.
             Method::POST | Method::PUT => Some(0),
             _ => None,
         },
     };
 
-    // Step 8.9: If contentLengthHeaderValue is non-null, then append (`Content-Length`,
-    // contentLengthHeaderValue) to httpRequest’s header list.
+    // Step 8.8: If contentLength is non-null, then set contentLengthHeaderValue to contentLength,
+    // serialized and isomorphic encoded.
     if let Some(content_length_value) = content_length_value {
+        // Step 8.9: If contentLengthHeaderValue is non-null, then append
+        // (`Content-Length`, contentLengthHeaderValue) to httpRequest’s header list.
         http_request
             .headers
             .typed_insert(ContentLength(content_length_value));
+
+        // Step 8.10: If contentLength is non-null and httpRequest’s keepalive is true, then:
+        if http_request.keep_alive {
+            // Step 8.10.1 Let inflightKeepaliveBytes be 0.
+            let mut inflight_keepalive_bytes = 0;
+
+            // Step 8.11: Let group be httpRequest’s client’s fetch group.
+            if let Some(ref client) = http_request.client {
+                // Step 8.10.4: For each fetchRecord of inflightRecords:
+                // Step 8.10.4.1: Let inflightRequest be fetchRecord’s request.
+                // Step 8.10.4.2: Increment inflightKeepaliveBytes by inflightRequest’s body’s length.
+                inflight_keepalive_bytes = client.fetch_group.borrow().body_length();
+            }
+
+            // Step 8.10.5: If the sum of contentLength and inflightKeepaliveBytes is greater than
+            // 64 kibibytes, then return a network error.
+            if content_length_value + inflight_keepalive_bytes as u64 > 65_536 {
+                return Response::network_error(NetworkError::Internal(
+                    "Request length exceeded".into(),
+                ));
+            }
+        }
     }
 
     // Step 8.10: If contentLength is non-null and httpRequest’s keepalive is true, then:

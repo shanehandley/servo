@@ -2,9 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use std::cell::Cell;
 use std::sync::{Arc, Mutex};
-use uuid::Uuid;
 
 use base::id::PipelineId;
 use content_security_policy::{self as csp, CspList};
@@ -15,6 +13,7 @@ use malloc_size_of_derive::MallocSizeOf;
 use mime::Mime;
 use serde::{Deserialize, Serialize};
 use servo_url::{ImmutableOrigin, ServoUrl};
+use uuid::Uuid;
 
 use crate::response::HttpsState;
 use crate::{ReferrerPolicy, ResourceTimingType};
@@ -182,19 +181,26 @@ pub enum FetchControllerState {
 ///
 /// A fetch controller is a struct used to enable callers of fetch to perform certain operations on
 /// it after it has started.
-#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
 pub struct FetchController {
-    state: Cell<FetchControllerState>,
+    #[ignore_malloc_size_of = "Mutex heap size undefined"]
+    state: Arc<Mutex<FetchControllerState>>,
     timing_info: Option<bool>,
     report_timing_steps: Option<bool>,
     serialized_abort_reason: Option<bool>,    // TODO
     next_manual_redirect_steps: Option<bool>, // TODO
 }
 
+impl PartialEq for FetchController {
+    fn eq(&self, other: &Self) -> bool {
+        self.timing_info == other.timing_info && self.report_timing_steps == other.report_timing_steps && self.serialized_abort_reason == other.serialized_abort_reason && self.next_manual_redirect_steps == other.next_manual_redirect_steps
+    }
+}
+
 impl FetchController {
     pub fn new() -> FetchController {
         FetchController {
-            state: Cell::new(FetchControllerState::Ongoing),
+            state: Arc::new(Mutex::new(FetchControllerState::Ongoing)),
             timing_info: None,
             report_timing_steps: None,
             serialized_abort_reason: None,
@@ -218,19 +224,32 @@ impl FetchController {
     }
 
     pub fn abort(&self, _error: Option<bool>) {
-        self.state.set(FetchControllerState::Aborted);
+        // self.state.lock().expect("dddd").(FetchControllerState::Aborted);
+        todo!()
     }
 
     /// <https://fetch.spec.whatwg.org/#fetch-controller-terminate>
     pub fn terminate(&self) {
-        self.state.set(FetchControllerState::Terminated);
+        // self.state.replace(FetchControllerState::Terminated);
+        todo!()
     }
 }
 
-#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
 pub struct FetchRecordRequest {
     keep_alive: bool,
     done_flag: Option<bool>,
+    body_length: usize,
+}
+
+impl From<Request> for FetchRecordRequest {
+    fn from(request: Request) -> FetchRecordRequest {
+        FetchRecordRequest {
+            keep_alive: request.keep_alive,
+            done_flag: request.done_flag,
+            body_length: request.body.as_ref().map_or(0, |body| body.total_bytes.unwrap_or(0)),
+        }
+    }
 }
 
 /// <https://fetch.spec.whatwg.org/#concept-fetch-record>
@@ -240,33 +259,63 @@ pub struct FetchRecord {
     controller: FetchController,
 }
 
+/// Let record be a new fetch record whose request is request and controller is fetchParams’s controller.
+impl From<Request> for FetchRecord {
+    fn from(request: Request) -> FetchRecord {
+        FetchRecord {
+            request: FetchRecordRequest::from(request),
+            controller: FetchController::new(),
+        }
+    }
+}
+
 /// <https://fetch.spec.whatwg.org/#fetch-groups>
-#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
-pub struct FetchGroup(Vec<FetchRecord>);
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
+pub struct FetchGroup {
+    #[ignore_malloc_size_of = "todo"]
+    records: Arc<Mutex<Vec<FetchRecord>>>,
+}
+
+impl PartialEq for FetchGroup {
+    fn eq(&self, other: &Self) -> bool {
+        false
+    }
+}
 
 impl FetchGroup {
+    pub fn append(&self, record: FetchRecord) {
+        self.records.lock().expect("ahhhh").push(record);
+    }
+
     /// <https://fetch.spec.whatwg.org/#concept-fetch-group-terminate>
     ///
     /// When a fetch group is terminated, for each associated fetch record whose fetch record’s
     /// controller is non-null, and whose request’s done flag is unset or keepalive is false,
     /// terminate the fetch record’s controller.
     pub fn terminate(&self) {
-        self.0.iter().for_each(|record| {
+        self.records.lock().expect("ahhhh").iter().for_each(|record| {
             if record.request.done_flag.is_none() && record.request.keep_alive == false {
                 record.controller.terminate();
             }
         });
     }
+
+    /// Computes the total body length of each request associated with this fetch group
+    pub fn body_length(&self) -> usize {
+        self.records.lock().expect("ahhhh").iter().fold(0, |acc, element| acc + element.request.body_length)
+    }
 }
 
 impl Default for FetchGroup {
     fn default() -> FetchGroup {
-        FetchGroup(Vec::new())
+        FetchGroup {
+            records: Arc::new(Mutex::new(Vec::new()))
+        }
     }
 }
 
 /// An unique id for environment
-#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
 pub struct EnvironmentId(pub Uuid);
 
 /// A partial implementation of of the environment settings object. There are additional properties
@@ -277,11 +326,18 @@ pub struct EnvironmentId(pub Uuid);
 #[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
 pub struct EnvironmentSettingsObject {
     /// An opaque string that uniquely identifies this environment.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-id>
     pub environment_id: EnvironmentId,
+    /// Null or a URL that represents the creation URL of the "top-level" environment. It is null
+    /// for workers and worklets.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-top-level-creation-url>
+    pub top_level_creation_url: Option<ServoUrl>,
     /// An origin used in security checks
     ///
     /// <https://html.spec.whatwg.org/multipage/#concept-settings-object-origin>
-    pub origin: Origin,
+    pub origin: Origin, // ImmutableOrigin? CSP:Origin?
     /// A URL that represents the location of the resource with which this environment is
     /// associated.
     ///
@@ -291,15 +347,19 @@ pub struct EnvironmentSettingsObject {
     ///
     /// <https://fetch.spec.whatwg.org/#fetch-groups>
     pub fetch_group: FetchGroup,
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-execution-ready-flag>
+    execution_ready_flag: bool
 }
 
 impl EnvironmentSettingsObject {
     pub fn new(origin: Origin, creation_url: Option<ServoUrl>) -> EnvironmentSettingsObject {
         EnvironmentSettingsObject {
             environment_id: EnvironmentId(Uuid::new_v4()),
+            top_level_creation_url: None,
             origin,
             creation_url,
             fetch_group: FetchGroup::default(),
+            execution_ready_flag: false
         }
     }
 }
@@ -656,6 +716,7 @@ pub struct Request {
     pub crash: Option<String>,
     /// https://fetch.spec.whatwg.org/#done-flag
     pub done_flag: Option<bool>,
+    pub fetch_controller: FetchController,
 }
 
 impl Request {
@@ -699,6 +760,7 @@ impl Request {
             https_state,
             crash: None,
             done_flag: None,
+            fetch_controller: FetchController::new()
         }
     }
 
@@ -744,6 +806,16 @@ impl Request {
             ResourceTimingType::Navigation
         } else {
             ResourceTimingType::Resource
+        }
+    }
+
+    /// Step 16.1 & 16.2 from 
+    pub fn append_fetch_record(&mut self) {
+        if let Some(settings) = &self.client {
+            // Step 16.1: Let record be a new fetch record whose request is request and controller
+            // is fetchParams’s controller.
+            // Step 16.2: Append record to request’s client’s fetch group list of fetch records.
+            settings.fetch_group.append(FetchRecord::from(self.clone()));
         }
     }
 }

@@ -21,7 +21,7 @@ use net_traits::request::{
     RequestMode as NetTraitsRequestMode, Window,
 };
 use net_traits::ReferrerPolicy as MsgReferrerPolicy;
-use servo_url::ServoUrl;
+use servo_url::{ImmutableOrigin, MutableOrigin, ServoUrl};
 
 use crate::body::{consume_body, BodyMixin, BodyType, Extractable};
 use crate::dom::bindings::cell::DomRefCell;
@@ -126,15 +126,15 @@ impl Request {
             },
         }
 
-        // Step 7
-        // TODO: `entry settings object` is not implemented yet.
-        let origin = base_url.origin();
+        // Step 7: TODO this is a generic origin, but it should be Immutable/Csp::Origin/Something...
+        let origin = global.environment_settings_object().origin;
 
         // Step 8
         let mut window = Window::Client;
 
-        // Step 9
-        // TODO: `environment settings object` is not implemented in Servo yet.
+        // TODO: Implement environment settings object in Window::Client
+        // Step 9: If request’s window is an environment settings object and its origin is same
+        // origin with origin, then set window to request’s window.
 
         // Step 10
         if !init.window.handle().is_null_or_undefined() {
@@ -153,7 +153,8 @@ impl Request {
         request.headers = temporary_request.headers.clone();
         request.unsafe_request = true;
         request.window = window;
-        // TODO: `entry settings object` is not implemented in Servo yet.
+        request.client = Some(global.environment_settings_object());
+        request.client = temporary_request.client;
         request.origin = Origin::Client;
         request.referrer = temporary_request.referrer;
         request.referrer_policy = temporary_request.referrer_policy;
@@ -207,7 +208,7 @@ impl Request {
                     if (parsed_referrer.cannot_be_a_base() &&
                         parsed_referrer.scheme() == "about" &&
                         parsed_referrer.path() == "client") ||
-                        parsed_referrer.origin() != origin
+                        parsed_referrer.origin().same_origin(&global.origin())
                     {
                         request.referrer = global.get_referrer();
                     } else {
@@ -270,7 +271,10 @@ impl Request {
             request.integrity_metadata = integrity;
         }
 
-        // Step 24 TODO: "If init["keepalive"] exists..."
+        // Step 24: If init["keepalive"] exists, then set request’s keepalive to it.
+        if let Some(init_keepalive) = init.keepalive.as_ref() {
+            request.keep_alive = init_keepalive.clone()
+        }
 
         // Step 25.1
         if let Some(init_method) = init.method.as_ref() {
@@ -524,6 +528,7 @@ fn request_is_locked(input: &Request) -> bool {
     input.is_locked()
 }
 
+#[allow(non_snake_case)]
 impl RequestMethods for Request {
     // https://fetch.spec.whatwg.org/#dom-request-method
     fn Method(&self) -> ByteString {
