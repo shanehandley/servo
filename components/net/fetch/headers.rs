@@ -21,67 +21,64 @@ pub fn determine_nosniff(headers: &HeaderMap) -> bool {
     }
 }
 
-/// <https://fetch.spec.whatwg.org/#concept-header-list-get-decode-split>
-fn get_header_value_as_list(name: &str, headers: &HeaderMap) -> Option<Vec<String>> {
+/// <https://fetch.spec.whatwg.org/#header-value-get-decode-and-split>
+pub fn get_decode_and_split_header_value(value: Vec<u8>) -> Vec<String> {
     fn char_is_not_quote_or_comma(c: char) -> bool {
         c != '\u{0022}' && c != '\u{002C}'
     }
 
-    // Step 1
-    let initial_value = get_value_from_header_list(name, headers);
+    // Step 1: Let input be the result of isomorphic decoding value.
+    let input = value.into_iter().map(char::from).collect::<String>();
 
-    if let Some(input) = initial_value {
-        // https://fetch.spec.whatwg.org/#header-value-get-decode-and-split
-        // Step 1
-        let input = input.into_iter().map(char::from).collect::<String>();
+    // Step 2: Let position be a position variable for input, initially pointing at the start of
+    // input.
+    let mut position = input.chars().peekable();
 
-        // Step 2
-        let mut position = input.chars().peekable();
+    // Step 3: Let values be a list of strings, initially « ».
+    let mut values: Vec<String> = vec![];
 
-        // Step 3
-        let mut values: Vec<String> = vec![];
+    // Step 4: Let temporaryValue be the empty string.
+    let mut value = String::new();
 
-        // Step 4
-        let mut value = String::new();
+    // Step 5: While true:
+    while position.peek().is_some() {
+        // Step 5.1
+        value += &*collect_sequence(&mut position, char_is_not_quote_or_comma);
 
-        // Step 5
-        while position.peek().is_some() {
-            // Step 5.1
-            value += &*collect_sequence(&mut position, char_is_not_quote_or_comma);
+        // Step 5.2
+        if let Some(&ch) = position.peek() {
+            if ch == '\u{0022}' {
+                // Step 5.2.1.1
+                value += &*collect_http_quoted_string(&mut position, false);
 
-            // Step 5.2
-            if let Some(&ch) = position.peek() {
-                if ch == '\u{0022}' {
-                    // Step 5.2.1.1
-                    value += &*collect_http_quoted_string(&mut position, false);
-
-                    // Step 5.2.1.2
-                    if position.peek().is_some() {
-                        continue;
-                    }
-                } else {
-                    // ch == '\u{002C}'
-
-                    // Step 5.2.2.2
-                    position.next();
+                // Step 5.2.1.2
+                if position.peek().is_some() {
+                    continue;
                 }
+            } else {
+                // ch == '\u{002C}'
+
+                // Step 5.2.2.2
+                position.next();
             }
-
-            // Step 5.3
-            value = value.trim_matches(HTTP_TAB_OR_SPACE).to_string();
-
-            // Step 5.4
-            values.push(value);
-
-            // Step 5.5
-            value = String::new();
         }
 
-        return Some(values);
+        // Step 5.3
+        value = value.trim_matches(HTTP_TAB_OR_SPACE).to_string();
+
+        // Step 5.4
+        values.push(value);
+
+        // Step 5.5
+        value = String::new();
     }
 
-    // Step 2
-    None
+    return values;
+}
+
+/// <https://fetch.spec.whatwg.org/#concept-header-list-get-decode-split>
+fn get_header_value_as_list(name: &str, headers: &HeaderMap) -> Option<Vec<String>> {
+    get_value_from_header_list(name, headers).map(|i| get_decode_and_split_header_value(i))
 }
 
 /// <https://infra.spec.whatwg.org/#collect-a-sequence-of-code-points>
