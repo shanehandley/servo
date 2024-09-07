@@ -25,7 +25,9 @@ use net_traits::image_cache::{
     ImageCache, ImageCacheResult, ImageOrMetadataAvailable, ImageResponse, PendingImageId,
     PendingImageResponse, UsePlaceholder,
 };
-use net_traits::request::{CorsSettings, Destination, Initiator, Referrer, RequestBuilder};
+use net_traits::request::{
+    CorsSettings, Destination, Initiator, InitiatorType, Referrer, RequestBuilder,
+};
 use net_traits::{
     FetchMetadata, FetchResponseListener, FetchResponseMsg, NetworkError, ReferrerPolicy,
     ResourceFetchTiming, ResourceTimingType,
@@ -83,7 +85,6 @@ use crate::dom::node::{
     document_from_node, window_from_node, BindContext, Node, NodeDamage, ShadowIncluding,
     UnbindContext,
 };
-use crate::dom::performanceresourcetiming::InitiatorType;
 use crate::dom::promise::Promise;
 use crate::dom::values::UNSIGNED_LONG_MAX;
 use crate::dom::virtualmethods::VirtualMethods;

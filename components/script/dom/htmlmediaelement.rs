@@ -20,7 +20,7 @@ use ipc_channel::ipc;
 use ipc_channel::router::ROUTER;
 use js::jsapi::JSAutoRealm;
 use media::{glplayer_channel, GLPlayerMsg, GLPlayerMsgForward, WindowGLContext};
-use net_traits::request::Destination;
+use net_traits::request::{Destination, InitiatorType};
 use net_traits::{
     CoreResourceMsg, FetchChannels, FetchMetadata, FetchResponseListener, Metadata, NetworkError,
     ResourceFetchTiming, ResourceTimingType,
@@ -86,7 +86,6 @@ use crate::dom::mediaerror::MediaError;
 use crate::dom::mediafragmentparser::MediaFragmentParser;
 use crate::dom::mediastream::MediaStream;
 use crate::dom::node::{document_from_node, window_from_node, Node, NodeDamage, UnbindContext};
-use crate::dom::performanceresourcetiming::InitiatorType;
 use crate::dom::promise::Promise;
 use crate::dom::shadowroot::IsUserAgentWidget;
 use crate::dom::texttrack::TextTrack;

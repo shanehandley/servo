@@ -15,7 +15,7 @@ use net_traits::image_cache::{
     ImageCache, ImageCacheResult, ImageOrMetadataAvailable, ImageResponse, PendingImageId,
     UsePlaceholder,
 };
-use net_traits::request::{CredentialsMode, Destination, RequestBuilder};
+use net_traits::request::{CredentialsMode, Destination, InitiatorType, RequestBuilder};
 use net_traits::{
     CoreResourceMsg, FetchChannels, FetchMetadata, FetchResponseListener, FetchResponseMsg,
     NetworkError, ResourceFetchTiming, ResourceTimingType,
@@ -37,7 +37,6 @@ use crate::dom::element::{AttributeMutation, Element};
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::htmlmediaelement::{HTMLMediaElement, ReadyState};
 use crate::dom::node::{document_from_node, window_from_node, Node};
-use crate::dom::performanceresourcetiming::InitiatorType;
 use crate::dom::virtualmethods::VirtualMethods;
 use crate::fetch::FetchCanceller;
 use crate::image_listener::{generate_cache_listener_for_element, ImageCacheListener};

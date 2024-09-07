@@ -22,7 +22,7 @@ use ipc_channel::router::ROUTER;
 use js::jsval::UndefinedValue;
 use js::rust::{transform_str_to_source_text, CompileOptionsWrapper, HandleObject, Stencil};
 use net_traits::request::{
-    CorsSettings, CredentialsMode, Destination, ParserMetadata, RequestBuilder,
+    CorsSettings, CredentialsMode, Destination, InitiatorType, ParserMetadata, RequestBuilder,
 };
 use net_traits::{
     FetchMetadata, FetchResponseListener, Metadata, NetworkError, ResourceFetchTiming,
@@ -58,7 +58,6 @@ use crate::dom::htmlelement::HTMLElement;
 use crate::dom::node::{
     document_from_node, window_from_node, BindContext, ChildrenMutation, CloneChildrenFlag, Node,
 };
-use crate::dom::performanceresourcetiming::InitiatorType;
 use crate::dom::virtualmethods::VirtualMethods;
 use crate::fetch::create_a_potential_cors_request;
 use crate::network_listener::{self, NetworkListener, PreInvoke, ResourceTimingListener};

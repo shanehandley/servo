@@ -56,6 +56,17 @@ pub enum Referrer {
     ReferrerUrl(ServoUrl),
 }
 
+/// An [Initiator Type](https://fetch.spec.whatwg.org/#request-initiator-type)
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub enum InitiatorType {
+    Beacon,
+    LocalName(String),
+    Navigation,
+    XMLHttpRequest,
+    Fetch,
+    Other,
+}
+
 /// A [request mode](https://fetch.spec.whatwg.org/#concept-request-mode)
 #[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
 pub enum RequestMode {
@@ -261,6 +272,7 @@ pub struct RequestBuilder {
     pub url_list: Vec<ServoUrl>,
     pub parser_metadata: ParserMetadata,
     pub initiator: Initiator,
+    pub initiator_type: Option<InitiatorType>,
     pub https_state: HttpsState,
     pub response_tainting: ResponseTainting,
     /// Servo internal: if crash details are present, trigger a crash error page with these details.
@@ -292,6 +304,7 @@ impl RequestBuilder {
             url_list: vec![],
             parser_metadata: ParserMetadata::Default,
             initiator: Initiator::None,
+            initiator_type: None,
             csp_list: None,
             https_state: HttpsState::None,
             response_tainting: ResponseTainting::Basic,
@@ -301,6 +314,11 @@ impl RequestBuilder {
 
     pub fn initiator(mut self, initiator: Initiator) -> RequestBuilder {
         self.initiator = initiator;
+        self
+    }
+
+    pub fn initiator_type(mut self, initiator_type: Option<InitiatorType>) -> RequestBuilder {
+        self.initiator_type = initiator_type;
         self
     }
 
@@ -408,6 +426,7 @@ impl RequestBuilder {
             self.https_state,
         );
         request.initiator = self.initiator;
+        request.initiator_type = self.initiator_type;
         request.method = self.method;
         request.headers = self.headers;
         request.unsafe_request = self.unsafe_request;
@@ -464,6 +483,8 @@ pub struct Request {
     pub service_workers_mode: ServiceWorkersMode,
     /// <https://fetch.spec.whatwg.org/#concept-request-initiator>
     pub initiator: Initiator,
+    /// <https://fetch.spec.whatwg.org/#request-initiator-type>
+    pub initiator_type: Option<InitiatorType>,
     /// <https://fetch.spec.whatwg.org/#concept-request-destination>
     pub destination: Destination,
     // TODO: priority object
@@ -529,6 +550,7 @@ impl Request {
             keep_alive: false,
             service_workers_mode: ServiceWorkersMode::All,
             initiator: Initiator::None,
+            initiator_type: None,
             destination: Destination::None,
             origin: origin.unwrap_or(Origin::Client),
             referrer,

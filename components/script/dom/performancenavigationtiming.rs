@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use dom_struct::dom_struct;
+use net_traits::request::InitiatorType;
 
 use crate::dom::bindings::codegen::Bindings::PerformanceBinding::DOMHighResTimeStamp;
 use crate::dom::bindings::codegen::Bindings::PerformanceNavigationTimingBinding::{
@@ -13,7 +14,7 @@ use crate::dom::bindings::reflector::reflect_dom_object;
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::document::Document;
 use crate::dom::globalscope::GlobalScope;
-use crate::dom::performanceresourcetiming::{InitiatorType, PerformanceResourceTiming};
+use crate::dom::performanceresourcetiming::PerformanceResourceTiming;
 
 #[dom_struct]
 // https://w3c.github.io/navigation-timing/#dom-performancenavigationtiming

@@ -7,14 +7,26 @@ use std::convert::TryInto;
 use std::sync::LazyLock;
 
 use dom_struct::dom_struct;
+use http::header::CONTENT_TYPE;
+use http::{HeaderMap, Method};
+use ipc_channel::ipc;
 use js::jsval::JSVal;
+use net_traits::request::{
+    is_cors_safelisted_request_header, CredentialsMode, InitiatorType, RequestBuilder, RequestMode,
+};
+use servo_url::ServoUrl;
 
+use crate::body::{Extractable, ExtractedBody};
+use crate::document_loader::LoadType;
 use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::codegen::Bindings::NavigatorBinding::NavigatorMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
+use crate::dom::bindings::codegen::Bindings::XMLHttpRequestBinding::BodyInit;
+use crate::dom::bindings::codegen::UnionTypes::ReadableStreamOrBlobOrArrayBufferViewOrArrayBufferOrFormDataOrStringOrURLSearchParams;
+use crate::dom::bindings::error::{Error, Fallible};
 use crate::dom::bindings::reflector::{reflect_dom_object, DomObject, Reflector};
 use crate::dom::bindings::root::{DomRoot, MutNullableDom};
-use crate::dom::bindings::str::DOMString;
+use crate::dom::bindings::str::{DOMString, USVString};
 use crate::dom::bindings::utils::to_frozen_array;
 use crate::dom::bluetooth::Bluetooth;
 use crate::dom::gamepad::Gamepad;
@@ -136,6 +148,7 @@ impl Navigator {
     }
 }
 
+#[allow(non_snake_case)]
 impl NavigatorMethods for Navigator {
     // https://html.spec.whatwg.org/multipage/#dom-navigator-product
     fn Product(&self) -> DOMString {
@@ -284,5 +297,125 @@ impl NavigatorMethods for Navigator {
     /// <https://html.spec.whatwg.org/multipage/#dom-navigator-hardwareconcurrency>
     fn HardwareConcurrency(&self) -> u64 {
         hardware_concurrency()
+    }
+
+    /// <https://w3c.github.io/beacon/#dom-navigator-sendbeacon>
+    fn SendBeacon(
+        &self,
+        url: USVString,
+        data: Option<
+            ReadableStreamOrBlobOrArrayBufferViewOrArrayBufferOrFormDataOrStringOrURLSearchParams,
+        >,
+    ) -> Fallible<bool> {
+        let global = self.global();
+        let window = global.as_window();
+        let document = window.Document();
+
+        // Step 1: Set base to this's relevant settings object's API base URL.
+        let base_url = global.api_base_url();
+
+        // Step 2: Set origin to this's relevant settings object's origin.
+        let origin = global.origin().immutable().clone();
+
+        // Step 3: Set parsedUrl to the result of the URL parser steps with url and base. If the
+        // algorithm returns an error, or if parsedUrl's scheme is not "http" or "https", throw a
+        // "TypeError" exception and terminate these steps.
+        let parsed_url = ServoUrl::parse_with_base(Some(&base_url), url.as_ref())
+            .map_err(|_| Error::Type("Invalid URL: URL could not be parsed.".to_string()))?;
+
+        if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
+            return Err(Error::Type(
+                "Invalid URL: URL scheme must be http or https.".to_string(),
+            ));
+        }
+
+        // Step 4: Let headerList be an empty list.
+        let mut header_list = HeaderMap::new();
+
+        // Step 5: Let corsMode be "no-cors".
+        let mut request_mode = RequestMode::NoCors;
+
+        let mut request_body: Option<ExtractedBody> = None;
+
+        // Step 6 If data is not null:
+        if let Some(request_data) = data {
+            // Step 6.1: Set transmittedData and contentType to the result of extracting data's byte
+            // stream with the keepalive flag set.
+
+            // If the request data is a ReadableStream, it is incompatible with keepalive requests,
+            // and a TypeError should be returned. This is defined in the spec as a step in the
+            // BodyInit extraction algorithm, but Servo's implementation does not support keepalive
+            // so it is omitted. It's necessary to perform this check before extraction instead.
+            // See: https://fetch.spec.whatwg.org/#concept-bodyinit-extract
+            if let BodyInit::ReadableStream(_) = request_data {
+                return Err(Error::Type(
+                    "Cannot extract a ReadableStream if keepalive is true".to_string(),
+                ));
+            }
+
+            let transmitted_data = request_data
+                .extract(&global)
+                .map_err(|_| Error::Type("Invalid Data".to_string()))?;
+
+            // Step 6.2: If the amount of data that can be queued to be sent by keepalive enabled
+            // requests is exceeded by the size of transmittedData (as defined in
+            // HTTP-network-or-cache fetch), set the return value to false and terminate these
+            // steps.
+
+            // Servo does not currently implement keepalive, each request is closed on completion.
+            // The expectation here is that as additional keepalive requests are made, we must
+            // ensure that the total bytes do not exceed a maximum size; correctly determining this
+            // is dependent on an implementation of fetch groups. As a compromise until keepalive is
+            // implemented, prevent individual request from exceeding the limit of 64 kibibytes as
+            // defined in the fetch spec:
+            // https://fetch.spec.whatwg.org/#concept-http-network-or-cache-fetch
+            // https://fetch.spec.whatwg.org/#fetch-groups
+            if let Some(length) = transmitted_data.total_bytes {
+                if length > 65_536 {
+                    return Ok(false);
+                }
+            }
+
+            // Step 6.3: If contentType is not null:
+            if let Some(content_type) = &transmitted_data.content_type {
+                // Set corsMode to "cors".
+                request_mode = RequestMode::CorsMode;
+
+                // If contentType value is a CORS-safelisted request-header value for the
+                // Content-Type header, set corsMode to "no-cors".
+                //
+                // https://fetch.spec.whatwg.org/#cors-safelisted-request-header
+                if is_cors_safelisted_request_header(&CONTENT_TYPE, &content_type.to_string()) {
+                    request_mode = RequestMode::NoCors;
+                }
+
+                // Append a Content-Type header with value contentType to headerList.
+                header_list.insert(CONTENT_TYPE, content_type.to_string().parse().unwrap());
+            }
+
+            request_body = Some(transmitted_data);
+        }
+
+        // Step 7: Set the return value to true, return the sendBeacon() call, and continue to run
+        // the following steps in parallel...
+        // let referrer = global.get_referrer();
+
+        // Step 7: A new request, initialized according to the spec
+        // TODO: Use a keepalive request once supported
+        let request = RequestBuilder::new(parsed_url, global.get_referrer())
+            .method(Method::POST)
+            .mode(request_mode)
+            .body(request_body.map(|e| e.into_net_request_body().0))
+            .credentials_mode(CredentialsMode::Include)
+            .headers(header_list)
+            .initiator_type(Some(InitiatorType::Beacon))
+            .origin(origin);
+
+        // This is a send and forget request, so a response listener is omitted
+        let (action_sender, _) = ipc::channel().unwrap();
+
+        document.fetch_async(LoadType::Beacon, request, action_sender);
+
+        Ok(true)
     }
 }

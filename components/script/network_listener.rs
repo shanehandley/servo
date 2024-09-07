@@ -4,6 +4,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use net_traits::request::InitiatorType;
 use net_traits::{
     Action, FetchResponseListener, FetchResponseMsg, ResourceFetchTiming, ResourceTimingType,
 };
@@ -13,7 +14,7 @@ use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::performanceentry::PerformanceEntry;
-use crate::dom::performanceresourcetiming::{InitiatorType, PerformanceResourceTiming};
+use crate::dom::performanceresourcetiming::PerformanceResourceTiming;
 use crate::task::{TaskCanceller, TaskOnce};
 use crate::task_source::networking::NetworkingTaskSource;
 use crate::task_source::TaskSource;

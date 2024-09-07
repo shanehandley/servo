@@ -23,6 +23,7 @@ pub enum LoadType {
     Stylesheet(#[no_trace] ServoUrl),
     PageSource(#[no_trace] ServoUrl),
     Media,
+    Beacon,
 }
 
 /// Canary value ensuring that manually added blocking loads (ie. ones that weren't
