@@ -27,6 +27,7 @@ use headers::{
 use http::header::{
     self, HeaderValue, ACCEPT, CONTENT_ENCODING, CONTENT_LANGUAGE, CONTENT_LOCATION, CONTENT_TYPE,
 };
+use http::uri::Scheme;
 use http::{HeaderMap, Method, Request as HyperRequest, StatusCode};
 use hyper::header::{HeaderName, TRANSFER_ENCODING};
 use hyper::{Body, Client, Response as HyperResponse};
@@ -48,12 +49,13 @@ use net_traits::{
     ReferrerPolicy, ResourceAttribute, ResourceFetchTiming, ResourceTimeValue,
 };
 use servo_arc::Arc;
-use servo_url::{ImmutableOrigin, ServoUrl};
+use servo_url::{ImmutableOrigin, OpaqueOrigin, ServoUrl};
 use tokio::sync::mpsc::{
     channel, unbounded_channel, Receiver as TokioReceiver, Sender as TokioSender,
     UnboundedReceiver, UnboundedSender,
 };
 use tokio_stream::wrappers::ReceiverStream;
+use url::Host;
 
 use crate::async_runtime::HANDLE;
 use crate::connector::{
@@ -227,6 +229,46 @@ fn is_schemelessy_same_site(site_a: &ImmutableOrigin, site_b: &ImmutableOrigin) 
         false
     }
 }
+
+/// <https://html.spec.whatwg.org/multipage/browsers.html#concept-site-same-site>
+fn is_same_site(site_a: &ImmutableOrigin, site_b: &ImmutableOrigin) -> bool {
+    // Step 1: If A and B are the same opaque origin, then return true.
+    if !site_a.is_tuple() && !site_b.is_tuple() && site_a == site_b {
+        true
+    } else if site_a.is_tuple() && site_b.is_tuple() {
+        // Step 3: If A's and B's scheme values are different, then return false.
+        if site_a.scheme() != site_b.scheme() {
+            return false
+        }
+
+        // Step 4: If A's and B's host values are not equal, then return false.
+        if site_a.host() != site_b.host() {
+            return false
+        }
+
+        // Step 5: Return true.
+        true
+    } else {
+        // Step 2: If A or B is an opaque origin, then return false.
+        false
+    }
+}
+
+/// <https://html.spec.whatwg.org/multipage/browsers.html#obtain-a-site>
+// fn obtain_site(site: &ImmutableOrigin) -> (String, Host) {
+//     // Step 1: If origin is an opaque origin, then return origin.
+//     // Step 2: If origin's host's registrable domain is null, then return (origin's scheme, 
+//     // origin's host).
+//     // Step 3: Return (origin's scheme, origin's host's registrable domain).
+// }
+
+
+/// <https://url.spec.whatwg.org/#host-registrable-domain>
+// fn registerable_host(host: Host) -> Option<String> {
+//     // Step 1: If host’s public suffix is null or host’s public suffix equals host, then return null.
+
+//     None
+// }
 
 /// <https://w3c.github.io/webappsec-referrer-policy/#strip-url>
 fn strip_url_for_use_as_referrer(mut url: ServoUrl, origin_only: bool) -> Option<ServoUrl> {
@@ -1145,12 +1187,13 @@ async fn http_network_or_cache_fetch(
         }
     }
 
-    // Step 5.9
+    // Step 8.11: If httpRequest’s referrer is a URL, then:
     match http_request.referrer {
         Referrer::NoReferrer => (),
         Referrer::ReferrerUrl(ref http_request_referrer) |
         Referrer::Client(ref http_request_referrer) => {
             if let Ok(referer) = http_request_referrer.to_string().parse::<Referer>() {
+                // Step 8.11.2: Append (`Referer`, referrerValue) to httpRequest’s header list.
                 http_request.headers.typed_insert(referer);
             } else {
                 // This error should only happen in cases where hyper and rust-url disagree
@@ -1161,7 +1204,7 @@ async fn http_network_or_cache_fetch(
         },
     };
 
-    // Step 5.10
+    // Step 8.12: Append a request `Origin` header for httpRequest.
     if cors_flag || (http_request.method != Method::GET && http_request.method != Method::HEAD) {
         debug_assert_ne!(http_request.origin, Origin::Client);
         if let Origin::Origin(ref url_origin) = http_request.origin {
@@ -1169,6 +1212,126 @@ async fn http_network_or_cache_fetch(
                 http_request.headers.typed_insert(hyper_origin)
             }
         }
+    }
+
+    // Step 8.13: Append the Fetch metadata headers for httpRequest.
+    // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-append-the-fetch-metadata-headers-for-a-request
+    // Step 8.13.1: If requests’s url is not an potentially trustworthy URL, return.
+    if http_request.url().is_potentially_trustworthy() {
+        // Sec-Fetch-Dest
+        // https://w3c.github.io/webappsec-fetch-metadata/#sec-fetch-dest-header
+        if let Ok(value) = HeaderValue::from_str(match http_request.destination {
+            Destination::None => "empty",
+            Destination::Audio => "audio",
+            Destination::AudioWorklet => "audioworklet",
+            Destination::Document => "document",
+            Destination::Embed => "embed",
+            Destination::Font => "font",
+            Destination::Frame => "frame",
+            Destination::IFrame => "iframe",
+            Destination::Image => "image",
+            Destination::Json => "json",
+            Destination::Manifest => "manifest",
+            Destination::Object => "object",
+            Destination::PaintWorklet => "paintworklet",
+            Destination::Report => "report",
+            Destination::Script => "script",
+            Destination::ServiceWorker => "serviceworker",
+            Destination::SharedWorker => "sharedworker",
+            Destination::Style => "style",
+            Destination::Track => "track",
+            Destination::Video => "video",
+            Destination::WebIdentity => "webidentity",
+            Destination::Worker => "worker",
+            Destination::Xslt => "xslt",
+        }) {
+            http_request.headers.insert("Sec-Fetch-Dest", value);
+        }
+
+        // Sec-Fetch-Mode
+        // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-set-mode
+        if let Ok(value) = HeaderValue::from_str(match http_request.mode {
+            RequestMode::Navigate => "navigate",
+            RequestMode::SameOrigin => "same-origin",
+            RequestMode::NoCors => "no-cors",
+            RequestMode::CorsMode => "cors-mode",
+            RequestMode::WebSocket { protocols: _ } => "websocket",
+        }) {
+            http_request.headers.insert("Sec-Fetch-Mode", value);
+        }
+
+        // Sec-Fetch-Site
+        // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-set-site
+        // TODO this os more involved than this:
+        // https://searchfox.org/mozilla-central/source/dom/security/SecFetch.cpp#238
+        if let Ok(value) = HeaderValue::from_str(if http_request.is_navigation_request() {
+            "none"
+        } else {
+            let mut value = "same-origin";
+
+            let is_same_origin = http_request.url_list.iter().any(|url| match http_request.origin {
+                SpecificOrigin(ref immutable_request_origin) => url.origin() == *immutable_request_origin,
+                _ => false,
+            });
+
+            /***
+             * The spec is very contorted here, but basically:
+             *  - assume "none"
+             *  - if url is same origin with request origin, but not same site: "cross-site"
+             *  - if url is same-origin and same-site: "same-site"
+             *  - 
+             *  - else: ""
+             */
+
+            // Step 5: If header’s value is not none, then for each url in r’s url list:
+            for url in http_request.url_list.iter() {
+                // Step 5.1: If url is same origin with r’s origin, continue.
+                let url_is_same_origin_with_requests_origin = match http_request.origin {
+                    SpecificOrigin(ref immutable_request_origin) => url.origin() == *immutable_request_origin,
+                    _ => false
+                };
+
+                let url_is_same_site_with_request_origin = if let Origin::Origin(ref request_origin) = http_request.origin {
+                    is_same_site(request_origin, &url.origin())
+                } else {
+                    false
+                };
+
+                match (url_is_same_origin_with_requests_origin, url_is_same_site_with_request_origin) {
+                    (true, true) => {
+                        value = "same-site";
+
+                        break;
+                    },
+                    _ => {
+                        continue;
+                    }
+                }
+
+                // let url_is_same_site_with_requests_origin = is_same_site(http_request.origin., &url.origin());
+                
+                // Step 5.2: Set header’s value to cross-site.
+                
+                // Step 5.3: If r’s origin is not same site with url’s origin, then break.
+                    let value = "cross-site";
+
+            }
+
+
+            
+            
+            // Step 5.4: Set header’s value to same-site.
+
+
+
+            "same-origin"
+        }) {
+            // Step 6: Set a structured field value `Sec-Fetch-Site`/header in r’s header list.
+            http_request.headers.insert("Sec-Fetch-Site", value);
+        }
+
+        // Sec-Fetch-User
+        // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-set-user
     }
 
     // Step 5.11
