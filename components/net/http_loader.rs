@@ -1224,7 +1224,7 @@ async fn http_network_or_cache_fetch(
             RequestMode::Navigate => "navigate",
             RequestMode::SameOrigin => "same-origin",
             RequestMode::NoCors => "no-cors",
-            RequestMode::CorsMode => "cors-mode",
+            RequestMode::CorsMode => "cors",
             RequestMode::WebSocket { protocols: _ } => "websocket",
         }) {
             http_request.headers.insert("Sec-Fetch-Mode", value);
