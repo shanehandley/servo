@@ -40,7 +40,7 @@ use net_traits::request::{
     get_cors_unsafe_header_names, is_cors_non_wildcard_request_header_name,
     is_cors_safelisted_method, is_cors_safelisted_request_header, BodyChunkRequest,
     BodyChunkResponse, CacheMode, CredentialsMode, Destination, Initiator, Origin, RedirectMode,
-    Referrer, Request, RequestBuilder, RequestMode, ResponseTainting, ServiceWorkersMode,
+    Referrer, Request, RequestBuilder, RequestMode, ResponseTainting, ServiceWorkersMode, Window,
 };
 use net_traits::response::{HttpsState, Response, ResponseBody, ResponseType};
 use net_traits::{
@@ -1095,27 +1095,32 @@ async fn http_network_or_cache_fetch(
     done_chan: &mut DoneChannel,
     context: &FetchContext,
 ) -> Response {
-    // Step 2
+    // Step 3: Let httpRequest be null.
+    let mut http_request;
+
+    // Step 4: Let response be null.
     let mut response: Option<Response> = None;
-    // Step 4
+
+    // Step 7: Let the revalidatingFlag be unset.
     let mut revalidating_flag = false;
 
-    // TODO: Implement Window enum for Request
-    let request_has_no_window = true;
+    // Step 8.1: If request’s window is "no-window" and request’s redirect mode is "error", then set
+    // httpFetchParams to fetchParams and httpRequest to request.
+    let request_has_no_window = request.window == Window::NoWindow;
 
-    // Step 5.1
-    let mut http_request;
     let http_request = if request_has_no_window && request.redirect_mode == RedirectMode::Error {
         request
     } else {
-        // Step 5.2.1, .2.2 and .2.3 and 2.4
+        // Step 8.2.1, 8.2.2 and 8.2.3
         http_request = request.clone();
         &mut http_request
     };
 
-    // Step 5.3
-    let credentials_flag = match http_request.credentials_mode {
+    // Step 8.3: Let includeCredentials be true if one of:
+    let mut include_credentials = match http_request.credentials_mode {
+        // request’s credentials mode is "include"
         CredentialsMode::Include => true,
+        // request’s credentials mode is "same-origin" and request’s response tainting is "basic"
         CredentialsMode::CredentialsSameOrigin
             if http_request.response_tainting == ResponseTainting::Basic =>
         {
@@ -1123,6 +1128,80 @@ async fn http_network_or_cache_fetch(
         },
         _ => false,
     };
+
+    // Step 8.4: If Cross-Origin-Embedder-Policy allows credentials with request returns false, then
+    // set includeCredentials to false.
+    // https://fetch.spec.whatwg.org/#cross-origin-embedder-policy-allows-credentials
+    let cross_origin_embedder_policy_allows_credentials = match http_request.mode {
+        // Step 1: If request’s mode is not "no-cors", then return true.
+        RequestMode::NoCors => true,
+        // Step 2: If request’s client is null, then return true.
+        // Step 3: If request’s client’s policy container’s embedder policy’s value is not
+        // "credentialless", then return true.
+        // (We don't currently implement request's client)
+        _ => {
+            true
+
+            // TODO: Evaluate these only if the client conditions fail. Lots of WPTs fail as a result
+            // of how this is evaluated, but that's very likely because there is a sensible client
+            // default which would return before this is evaluated
+
+            // // Step 4: If request’s origin is same origin with request’s current URL’s origin and
+            // // request does not have a redirect-tainted origin, then return true.
+            // let request_is_same_origin_with_current_url =
+            //     if let Origin::Origin(ref origin) = http_request.origin {
+            //         warn!("request_origin: {:?}", origin.clone());
+            //         warn!("http_request.current_url().origin(): {:?}", http_request.current_url().origin());
+
+            //         *origin == http_request.current_url().origin()
+            //     } else {
+            //         false
+            //     };
+
+            // warn!("======== request_is_same_origin_with_current_url: {:?}", request_is_same_origin_with_current_url);
+
+            // let mut has_redirect_tainted_origin = false;
+
+            // // https://fetch.spec.whatwg.org/#concept-request-tainted-origin
+            // // Step 1: Let lastURL be null.
+            // let mut last_url: Option<&ServoUrl> = None;
+
+            // warn!("======== the length of the URL list is: {:?}", http_request.url_list.len());
+            
+            // // The spec doesn't account for a single item
+
+            // if http_request.url_list.len() > 1 {
+            //     for url in http_request.url_list.iter() {
+            //         if let Some(last) = last_url {
+            //             // Step 2: If url’s origin is not same origin with lastURL’s origin and
+            //             // request’s origin is not same origin with lastURL’s origin, then return
+            //             // true.
+            //             let urls_are_same_origin = url.origin() == last.origin();
+            //             let request_is_same_origin =
+            //                 if let Origin::Origin(ref origin) = http_request.origin {
+            //                     *origin == last.origin()
+            //                 } else {
+            //                     false
+            //                 };
+    
+            //             if !urls_are_same_origin && !request_is_same_origin {
+            //                 has_redirect_tainted_origin = true;
+            //             }
+            //         }
+    
+            //         last_url = Some(url);
+            //     }
+            // }
+
+            // warn!("======== has_redirect_tainted_origin: {:?}", has_redirect_tainted_origin);
+
+            // request_is_same_origin_with_current_url && !has_redirect_tainted_origin
+        },
+    };
+
+    if include_credentials == true && !cross_origin_embedder_policy_allows_credentials {
+        include_credentials = false
+    }
 
     let content_length_value = match http_request.body {
         None => match http_request.method {
@@ -1221,10 +1300,10 @@ async fn http_network_or_cache_fetch(
     // here, according to the fetch spec
     set_default_accept_encoding(&mut http_request.headers);
 
-    // Step 5.17
+    // Step 8.21: If includeCredentials is true, then:
     // TODO some of this step can't be implemented yet
-    if credentials_flag {
-        // Substep 1
+    if include_credentials {
+        // Step 8.21.1: If the user agent is not configured to block cookies for httpRequest, then:
         // TODO http://mxr.mozilla.org/servo/source/components/net/http_loader.rs#504
         // XXXManishearth http_loader has block_cookies: support content blocking here too
         set_request_cookies(
@@ -1232,22 +1311,27 @@ async fn http_network_or_cache_fetch(
             &mut http_request.headers,
             &context.state.cookie_jar,
         );
-        // Substep 2
+
+        // Step 8.21.2: If httpRequest’s header list does not contain `Authorization`, then:
         if !http_request.headers.contains_key(header::AUTHORIZATION) {
-            // Substep 3
+            // Step 8.21.2.1: Let authorizationValue be null.
             let mut authorization_value = None;
 
-            // Substep 4
+            // Step 8.21.2.2: If there’s an authentication entry for httpRequest and either
+            // httpRequest’s use-URL-credentials flag is unset or httpRequest’s current URL does not
+            // include credentials, then set authorizationValue to authentication entry.
             if let Some(basic) = auth_from_cache(&context.state.auth_cache, &current_url.origin()) {
                 if !http_request.use_url_credentials || !has_credentials(&current_url) {
                     authorization_value = Some(basic);
                 }
             }
 
-            // Substep 5
-            if authentication_fetch_flag &&
-                authorization_value.is_none() &&
-                has_credentials(&current_url)
+            // Step 8.21.2.3: Otherwise, if httpRequest’s current URL does include credentials and
+            // isAuthenticationFetch is true, set authorizationValue to httpRequest’s current URL,
+            // converted to an `Authorization` value.
+            if authorization_value.is_none() &&
+                has_credentials(&current_url) &&
+                authentication_fetch_flag
             {
                 authorization_value = Some(Authorization::basic(
                     current_url.username(),
@@ -1255,7 +1339,8 @@ async fn http_network_or_cache_fetch(
                 ));
             }
 
-            // Substep 6
+            // Step 8.21.2.4: If authorizationValue is non-null, then append
+            // (`Authorization`, authorizationValue) to httpRequest’s header list.
             if let Some(basic) = authorization_value {
                 http_request.headers.typed_insert(basic);
             }
@@ -1436,7 +1521,7 @@ async fn http_network_or_cache_fetch(
     if response.is_none() {
         // Substep 2
         let forward_response =
-            http_network_fetch(http_request, credentials_flag, done_chan, context).await;
+            http_network_fetch(http_request, include_credentials, done_chan, context).await;
         // Substep 3
         if let Some((200..=399, _)) = forward_response.raw_status {
             if !http_request.method.is_safe() {
@@ -1555,7 +1640,7 @@ async fn http_network_or_cache_fetch(
     // Step 10
     // FIXME: Figure out what to do with request window objects
     if let (Some((StatusCode::UNAUTHORIZED, _)), false, true) =
-        (response.status.as_ref(), cors_flag, credentials_flag)
+        (response.status.as_ref(), cors_flag, include_credentials)
     {
         // Substep 1
         // TODO: Spec says requires testing on multiple WWW-Authenticate headers
