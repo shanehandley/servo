@@ -27,7 +27,6 @@ use headers::{
 use http::header::{
     self, HeaderValue, ACCEPT, CONTENT_ENCODING, CONTENT_LANGUAGE, CONTENT_LOCATION, CONTENT_TYPE,
 };
-use http::uri::Scheme;
 use http::{HeaderMap, Method, Request as HyperRequest, StatusCode};
 use hyper::header::{HeaderName, TRANSFER_ENCODING};
 use hyper::{Body, Client, Response as HyperResponse};
@@ -41,7 +40,7 @@ use net_traits::request::{
     get_cors_unsafe_header_names, is_cors_non_wildcard_request_header_name,
     is_cors_safelisted_method, is_cors_safelisted_request_header, BodyChunkRequest,
     BodyChunkResponse, CacheMode, CredentialsMode, Destination, Initiator, Origin, RedirectMode,
-    Referrer, Request, RequestBuilder, RequestMode, ResponseTainting, ServiceWorkersMode,
+    Referrer, Request, RequestBuilder, RequestMode, ResponseTainting, ServiceWorkersMode, Window,
 };
 use net_traits::response::{HttpsState, Response, ResponseBody, ResponseType};
 use net_traits::{
@@ -49,13 +48,12 @@ use net_traits::{
     ReferrerPolicy, ResourceAttribute, ResourceFetchTiming, ResourceTimeValue,
 };
 use servo_arc::Arc;
-use servo_url::{ImmutableOrigin, OpaqueOrigin, ServoUrl};
+use servo_url::{ImmutableOrigin, ServoUrl};
 use tokio::sync::mpsc::{
     channel, unbounded_channel, Receiver as TokioReceiver, Sender as TokioSender,
     UnboundedReceiver, UnboundedSender,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use url::Host;
 
 use crate::async_runtime::HANDLE;
 use crate::connector::{
@@ -229,46 +227,6 @@ fn is_schemelessy_same_site(site_a: &ImmutableOrigin, site_b: &ImmutableOrigin) 
         false
     }
 }
-
-/// <https://html.spec.whatwg.org/multipage/browsers.html#concept-site-same-site>
-fn is_same_site(site_a: &ImmutableOrigin, site_b: &ImmutableOrigin) -> bool {
-    // Step 1: If A and B are the same opaque origin, then return true.
-    if !site_a.is_tuple() && !site_b.is_tuple() && site_a == site_b {
-        true
-    } else if site_a.is_tuple() && site_b.is_tuple() {
-        // Step 3: If A's and B's scheme values are different, then return false.
-        if site_a.scheme() != site_b.scheme() {
-            return false
-        }
-
-        // Step 4: If A's and B's host values are not equal, then return false.
-        if site_a.host() != site_b.host() {
-            return false
-        }
-
-        // Step 5: Return true.
-        true
-    } else {
-        // Step 2: If A or B is an opaque origin, then return false.
-        false
-    }
-}
-
-/// <https://html.spec.whatwg.org/multipage/browsers.html#obtain-a-site>
-// fn obtain_site(site: &ImmutableOrigin) -> (String, Host) {
-//     // Step 1: If origin is an opaque origin, then return origin.
-//     // Step 2: If origin's host's registrable domain is null, then return (origin's scheme, 
-//     // origin's host).
-//     // Step 3: Return (origin's scheme, origin's host's registrable domain).
-// }
-
-
-/// <https://url.spec.whatwg.org/#host-registrable-domain>
-// fn registerable_host(host: Host) -> Option<String> {
-//     // Step 1: If host’s public suffix is null or host’s public suffix equals host, then return null.
-
-//     None
-// }
 
 /// <https://w3c.github.io/webappsec-referrer-policy/#strip-url>
 fn strip_url_for_use_as_referrer(mut url: ServoUrl, origin_only: bool) -> Option<ServoUrl> {
@@ -1137,27 +1095,33 @@ async fn http_network_or_cache_fetch(
     done_chan: &mut DoneChannel,
     context: &FetchContext,
 ) -> Response {
-    // Step 2
+    // Step 3: Let httpRequest be null.
+    let mut http_request;
+
+    // Step 4: Let response be null.
     let mut response: Option<Response> = None;
-    // Step 4
+
+    // Step 7: Let the revalidatingFlag be unset.
     let mut revalidating_flag = false;
 
-    // TODO: Implement Window enum for Request
-    let request_has_no_window = true;
+    // Step 8.1: If request’s window is "no-window" and request’s redirect mode is "error", then set
+    // httpFetchParams to fetchParams and httpRequest to request.
+    let request_has_no_window = request.window == Window::NoWindow;
 
-    // Step 5.1
-    let mut http_request;
     let http_request = if request_has_no_window && request.redirect_mode == RedirectMode::Error {
         request
     } else {
-        // Step 5.2.1, .2.2 and .2.3 and 2.4
+        // Step 8.2.1: Set httpRequest to a clone of request.
         http_request = request.clone();
+
         &mut http_request
     };
 
-    // Step 5.3
+    // Step 8.3: Let includeCredentials be true if one of:
     let credentials_flag = match http_request.credentials_mode {
+        // request’s credentials mode is "include"
         CredentialsMode::Include => true,
+        // request’s credentials mode is "same-origin" and request’s response tainting is "basic"
         CredentialsMode::CredentialsSameOrigin
             if http_request.response_tainting == ResponseTainting::Basic =>
         {
@@ -1166,26 +1130,32 @@ async fn http_network_or_cache_fetch(
         _ => false,
     };
 
+    // Step 8.4: If Cross-Origin-Embedder-Policy allows credentials with request returns false, then
+    // set includeCredentials to false.
+    // TODO: Requires request's client object
+
+    // Step 8.5: Let contentLength be httpRequest’s body’s length, if httpRequest’s body is
+    // non-null; otherwise null.
     let content_length_value = match http_request.body {
+        Some(ref http_request_body) => http_request_body.len().map(|size| size as u64),
         None => match http_request.method {
-            // Step 5.5
+            // Step 8.7: If httpRequest’s body is null and httpRequest’s method is `POST` or `PUT`, then
+            // set contentLengthHeaderValue to `0`.
             Method::POST | Method::PUT => Some(0),
-            // Step 5.4
             _ => None,
         },
-        // Step 5.6
-        Some(ref http_request_body) => http_request_body.len().map(|size| size as u64),
     };
 
-    // Step 5.7
+    // Step 8.9: If contentLengthHeaderValue is non-null, then append (`Content-Length`,
+    // contentLengthHeaderValue) to httpRequest’s header list.
     if let Some(content_length_value) = content_length_value {
         http_request
             .headers
             .typed_insert(ContentLength(content_length_value));
-        if http_request.keep_alive {
-            // Step 5.8 TODO: needs request's client object
-        }
     }
+
+    // Step 8.10: If contentLength is non-null and httpRequest’s keepalive is true, then:
+    // TODO Keepalive requires request's client object's fetch group
 
     // Step 8.11: If httpRequest’s referrer is a URL, then:
     match http_request.referrer {
@@ -1262,76 +1232,20 @@ async fn http_network_or_cache_fetch(
 
         // Sec-Fetch-Site
         // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-set-site
-        // TODO this os more involved than this:
+        // TODO this requires being able to reliably determine how the fetch was initiated in the UI
         // https://searchfox.org/mozilla-central/source/dom/security/SecFetch.cpp#238
-        if let Ok(value) = HeaderValue::from_str(if http_request.is_navigation_request() {
-            "none"
-        } else {
-            let mut value = "same-origin";
-
-            let is_same_origin = http_request.url_list.iter().any(|url| match http_request.origin {
-                SpecificOrigin(ref immutable_request_origin) => url.origin() == *immutable_request_origin,
-                _ => false,
-            });
-
-            /***
-             * The spec is very contorted here, but basically:
-             *  - assume "none"
-             *  - if url is same origin with request origin, but not same site: "cross-site"
-             *  - if url is same-origin and same-site: "same-site"
-             *  - 
-             *  - else: ""
-             */
-
-            // Step 5: If header’s value is not none, then for each url in r’s url list:
-            for url in http_request.url_list.iter() {
-                // Step 5.1: If url is same origin with r’s origin, continue.
-                let url_is_same_origin_with_requests_origin = match http_request.origin {
-                    SpecificOrigin(ref immutable_request_origin) => url.origin() == *immutable_request_origin,
-                    _ => false
-                };
-
-                let url_is_same_site_with_request_origin = if let Origin::Origin(ref request_origin) = http_request.origin {
-                    is_same_site(request_origin, &url.origin())
-                } else {
-                    false
-                };
-
-                match (url_is_same_origin_with_requests_origin, url_is_same_site_with_request_origin) {
-                    (true, true) => {
-                        value = "same-site";
-
-                        break;
-                    },
-                    _ => {
-                        continue;
-                    }
-                }
-
-                // let url_is_same_site_with_requests_origin = is_same_site(http_request.origin., &url.origin());
-                
-                // Step 5.2: Set header’s value to cross-site.
-                
-                // Step 5.3: If r’s origin is not same site with url’s origin, then break.
-                    let value = "cross-site";
-
-            }
-
-
-            
-            
-            // Step 5.4: Set header’s value to same-site.
-
-
-
-            "same-origin"
-        }) {
-            // Step 6: Set a structured field value `Sec-Fetch-Site`/header in r’s header list.
-            http_request.headers.insert("Sec-Fetch-Site", value);
-        }
 
         // Sec-Fetch-User
         // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-set-user
+        // TODO
+    }
+
+    // Step 8.14: If httpRequest’s initiator is "prefetch", then set a structured field value given
+    // (`Sec-Purpose`, the token "prefetch") in httpRequest’s header list.
+    if http_request.initiator == Initiator::Prefetch {
+        if let Ok(value) = HeaderValue::from_str("prefetch") {
+            http_request.headers.insert("Sec-Purpose", value);
+        }
     }
 
     // Step 5.11
