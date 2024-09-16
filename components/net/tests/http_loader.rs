@@ -146,6 +146,9 @@ fn test_check_default_headers_loaded_in_every_request() {
 
     headers.typed_insert::<UserAgent>(crate::DEFAULT_USER_AGENT.parse().unwrap());
 
+    headers.insert("Sec-Fetch-Dest", HeaderValue::from_static("document"));
+    headers.insert("Sec-Fetch-Mode", HeaderValue::from_static("no-cors"));
+
     *expected_headers.lock().unwrap() = Some(headers.clone());
 
     // Testing for method.GET
@@ -282,6 +285,9 @@ fn test_request_and_response_data_with_network_messages() {
         header::ACCEPT_ENCODING,
         HeaderValue::from_static("gzip, deflate, br"),
     );
+
+    headers.insert("Sec-Fetch-Dest", HeaderValue::from_static("document"));
+    headers.insert("Sec-Fetch-Mode", HeaderValue::from_static("no-cors"));
 
     let httprequest = DevtoolsHttpRequest {
         url: url,
