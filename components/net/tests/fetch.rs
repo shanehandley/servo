@@ -1363,6 +1363,9 @@ fn test_fetch_with_devtools() {
 
     headers.typed_insert::<UserAgent>(DEFAULT_USER_AGENT.parse().unwrap());
 
+    headers.insert("Sec-Fetch-Dest", HeaderValue::from_static("empty"));
+    headers.insert("Sec-Fetch-Mode", HeaderValue::from_static("no-cors"));
+
     headers.insert(
         header::ACCEPT_ENCODING,
         HeaderValue::from_static("gzip, deflate, br"),

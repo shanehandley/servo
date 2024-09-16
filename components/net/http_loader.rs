@@ -40,7 +40,7 @@ use net_traits::request::{
     get_cors_unsafe_header_names, is_cors_non_wildcard_request_header_name,
     is_cors_safelisted_method, is_cors_safelisted_request_header, BodyChunkRequest,
     BodyChunkResponse, CacheMode, CredentialsMode, Destination, Initiator, Origin, RedirectMode,
-    Referrer, Request, RequestBuilder, RequestMode, ResponseTainting, ServiceWorkersMode,
+    Referrer, Request, RequestBuilder, RequestMode, ResponseTainting, ServiceWorkersMode, Window,
 };
 use net_traits::response::{HttpsState, Response, ResponseBody, ResponseType};
 use net_traits::{
@@ -1095,27 +1095,33 @@ async fn http_network_or_cache_fetch(
     done_chan: &mut DoneChannel,
     context: &FetchContext,
 ) -> Response {
-    // Step 2
+    // Step 3: Let httpRequest be null.
+    let mut http_request;
+
+    // Step 4: Let response be null.
     let mut response: Option<Response> = None;
-    // Step 4
+
+    // Step 7: Let the revalidatingFlag be unset.
     let mut revalidating_flag = false;
 
-    // TODO: Implement Window enum for Request
-    let request_has_no_window = true;
+    // Step 8.1: If request’s window is "no-window" and request’s redirect mode is "error", then set
+    // httpFetchParams to fetchParams and httpRequest to request.
+    let request_has_no_window = request.window == Window::NoWindow;
 
-    // Step 5.1
-    let mut http_request;
     let http_request = if request_has_no_window && request.redirect_mode == RedirectMode::Error {
         request
     } else {
-        // Step 5.2.1, .2.2 and .2.3 and 2.4
+        // Step 8.2.1: Set httpRequest to a clone of request.
         http_request = request.clone();
+
         &mut http_request
     };
 
-    // Step 5.3
+    // Step 8.3: Let includeCredentials be true if one of:
     let credentials_flag = match http_request.credentials_mode {
+        // request’s credentials mode is "include"
         CredentialsMode::Include => true,
+        // request’s credentials mode is "same-origin" and request’s response tainting is "basic"
         CredentialsMode::CredentialsSameOrigin
             if http_request.response_tainting == ResponseTainting::Basic =>
         {
@@ -1124,33 +1130,40 @@ async fn http_network_or_cache_fetch(
         _ => false,
     };
 
+    // Step 8.4: If Cross-Origin-Embedder-Policy allows credentials with request returns false, then
+    // set includeCredentials to false.
+    // TODO: Requires request's client object
+
+    // Step 8.5: Let contentLength be httpRequest’s body’s length, if httpRequest’s body is
+    // non-null; otherwise null.
     let content_length_value = match http_request.body {
+        Some(ref http_request_body) => http_request_body.len().map(|size| size as u64),
         None => match http_request.method {
-            // Step 5.5
+            // Step 8.7: If httpRequest’s body is null and httpRequest’s method is `POST` or `PUT`, then
+            // set contentLengthHeaderValue to `0`.
             Method::POST | Method::PUT => Some(0),
-            // Step 5.4
             _ => None,
         },
-        // Step 5.6
-        Some(ref http_request_body) => http_request_body.len().map(|size| size as u64),
     };
 
-    // Step 5.7
+    // Step 8.9: If contentLengthHeaderValue is non-null, then append (`Content-Length`,
+    // contentLengthHeaderValue) to httpRequest’s header list.
     if let Some(content_length_value) = content_length_value {
         http_request
             .headers
             .typed_insert(ContentLength(content_length_value));
-        if http_request.keep_alive {
-            // Step 5.8 TODO: needs request's client object
-        }
     }
 
-    // Step 5.9
+    // Step 8.10: If contentLength is non-null and httpRequest’s keepalive is true, then:
+    // TODO Keepalive requires request's client object's fetch group
+
+    // Step 8.11: If httpRequest’s referrer is a URL, then:
     match http_request.referrer {
         Referrer::NoReferrer => (),
         Referrer::ReferrerUrl(ref http_request_referrer) |
         Referrer::Client(ref http_request_referrer) => {
             if let Ok(referer) = http_request_referrer.to_string().parse::<Referer>() {
+                // Step 8.11.2: Append (`Referer`, referrerValue) to httpRequest’s header list.
                 http_request.headers.typed_insert(referer);
             } else {
                 // This error should only happen in cases where hyper and rust-url disagree
@@ -1161,13 +1174,80 @@ async fn http_network_or_cache_fetch(
         },
     };
 
-    // Step 5.10
+    // Step 8.12: Append a request `Origin` header for httpRequest.
     if cors_flag || (http_request.method != Method::GET && http_request.method != Method::HEAD) {
         debug_assert_ne!(http_request.origin, Origin::Client);
         if let Origin::Origin(ref url_origin) = http_request.origin {
             if let Some(hyper_origin) = try_immutable_origin_to_hyper_origin(url_origin) {
                 http_request.headers.typed_insert(hyper_origin)
             }
+        }
+    }
+
+    // Step 8.13: Append the Fetch metadata headers for httpRequest.
+    // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-append-the-fetch-metadata-headers-for-a-request
+    // Step 8.13.1: If requests’s url is not an potentially trustworthy URL, return.
+    if http_request.url().is_potentially_trustworthy() {
+        // Sec-Fetch-Dest
+        // https://w3c.github.io/webappsec-fetch-metadata/#sec-fetch-dest-header
+        if let Ok(destination) = HeaderValue::from_str(match http_request.destination {
+            Destination::None => "empty",
+            Destination::Audio => "audio",
+            Destination::AudioWorklet => "audioworklet",
+            Destination::Document => "document",
+            Destination::Embed => "embed",
+            Destination::Font => "font",
+            Destination::Frame => "frame",
+            Destination::IFrame => "iframe",
+            Destination::Image => "image",
+            Destination::Json => "json",
+            Destination::Manifest => "manifest",
+            Destination::Object => "object",
+            Destination::PaintWorklet => "paintworklet",
+            Destination::Report => "report",
+            Destination::Script => "script",
+            Destination::ServiceWorker => "serviceworker",
+            Destination::SharedWorker => "sharedworker",
+            Destination::Style => "style",
+            Destination::Track => "track",
+            Destination::Video => "video",
+            Destination::WebIdentity => "webidentity",
+            Destination::Worker => "worker",
+            Destination::Xslt => "xslt",
+        }) {
+            if !destination.is_empty() {
+                http_request.headers.insert("Sec-Fetch-Dest", destination);
+            }
+        }
+
+        // Sec-Fetch-Mode
+        // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-set-mode
+        if let Ok(mode) = HeaderValue::from_str(match http_request.mode {
+            RequestMode::Navigate => "navigate",
+            RequestMode::SameOrigin => "same-origin",
+            RequestMode::NoCors => "no-cors",
+            RequestMode::CorsMode => "cors",
+            RequestMode::WebSocket { protocols: _ } => "websocket",
+        }) {
+            http_request.headers.insert("Sec-Fetch-Mode", mode);
+        }
+
+        // Sec-Fetch-Site
+        // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-set-site
+        // TODO: Requires Servo to be able to reliably determine how the request was initiated
+        // https://w3c.github.io/webappsec-fetch-metadata/#directly-user-initiated
+
+        // Sec-Fetch-User
+        // https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-set-user
+        // TODO: Relies upon request's `user_activation` which is not yet implemented
+        // https://fetch.spec.whatwg.org/#request-user-activation
+    }
+
+    // Step 8.14: If httpRequest’s initiator is "prefetch", then set a structured field value given
+    // (`Sec-Purpose`, the token "prefetch") in httpRequest’s header list.
+    if http_request.initiator == Initiator::Prefetch {
+        if let Ok(value) = HeaderValue::from_str("prefetch") {
+            http_request.headers.insert("Sec-Purpose", value);
         }
     }
 
