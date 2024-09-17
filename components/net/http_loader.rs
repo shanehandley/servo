@@ -1251,7 +1251,8 @@ async fn http_network_or_cache_fetch(
         }
     }
 
-    // Step 5.11
+    // Step 8.15: If httpRequest’s header list does not contain `User-Agent`, then user agents
+    // should append (`User-Agent`, default `User-Agent` value) to httpRequest’s header list.
     if !http_request.headers.contains_key(header::USER_AGENT) {
         let user_agent = context.user_agent.clone().into_owned();
         http_request
@@ -1259,39 +1260,51 @@ async fn http_network_or_cache_fetch(
             .typed_insert::<UserAgent>(user_agent.parse().unwrap());
     }
 
+    // Steps 8.16 - 8.18
     match http_request.cache_mode {
-        // Step 5.12
+        // Step 8.16: If httpRequest’s cache mode is "default" and httpRequest’s header list
+        // contains `If-Modified-Since`, `If-None-Match`, `If-Unmodified-Since`, `If-Match`, or
+        // `If-Range`, then set httpRequest’s cache mode to "no-store".
         CacheMode::Default if is_no_store_cache(&http_request.headers) => {
             http_request.cache_mode = CacheMode::NoStore;
         },
 
-        // Step 5.13
+        // Step 8.17: If httpRequest’s cache mode is "no-cache", httpRequest’s prevent no-cache
+        // cache-control header modification flag is unset, and httpRequest’s header list does not
+        // contain `Cache-Control`, then append (`Cache-Control`, `max-age=0`) to httpRequest’s
+        // header list.
         CacheMode::NoCache if !http_request.headers.contains_key(header::CACHE_CONTROL) => {
             http_request
                 .headers
                 .typed_insert(CacheControl::new().with_max_age(Duration::from_secs(0)));
         },
 
-        // Step 5.14
+        // Step 8.18: If httpRequest’s cache mode is "no-store" or "reload", then:
         CacheMode::Reload | CacheMode::NoStore => {
-            // Substep 1
+            // Step 8.18.1: If httpRequest’s header list does not contain `Pragma`, then append
+            // (`Pragma`, `no-cache`) to httpRequest’s header list.
             if !http_request.headers.contains_key(header::PRAGMA) {
                 http_request.headers.typed_insert(Pragma::no_cache());
             }
 
-            // Substep 2
+            // Step 8.18.2: If httpRequest’s header list does not contain `Cache-Control`, then
+            // append (`Cache-Control`, `no-cache`) to httpRequest’s header list.
             if !http_request.headers.contains_key(header::CACHE_CONTROL) {
                 http_request
                     .headers
                     .typed_insert(CacheControl::new().with_no_cache());
             }
         },
-
         _ => {},
     }
 
-    // Step 5.15
-    // TODO: if necessary append `Accept-Encoding`/`identity` to headers
+    // Step 8.19: If httpRequest’s header list contains `Range`, then append (`Accept-Encoding`,
+    // `identity`) to httpRequest’s header list.
+    if http_request.headers.contains_key(header::RANGE) {
+        http_request
+            .headers
+            .insert("Accept-Encoding", HeaderValue::from_static("identity"));
+    }
 
     // Step 5.16
     let current_url = http_request.current_url();
