@@ -25,7 +25,8 @@ use headers::{
     IfModifiedSince, LastModified, Origin as HyperOrigin, Pragma, Referer, UserAgent,
 };
 use http::header::{
-    self, HeaderValue, ACCEPT, CONTENT_ENCODING, CONTENT_LANGUAGE, CONTENT_LOCATION, CONTENT_TYPE,
+    self, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_ENCODING, CONTENT_LANGUAGE, CONTENT_LOCATION,
+    CONTENT_TYPE,
 };
 use http::{HeaderMap, Method, Request as HyperRequest, StatusCode};
 use hyper::header::{HeaderName, TRANSFER_ENCODING};
@@ -905,20 +906,20 @@ pub async fn http_redirect_fetch(
 ) -> Response {
     let mut redirect_end_timer = RedirectEndTimer(Some(context.timing.clone()));
 
-    // Step 1
     assert!(response.return_internal);
 
+    // Step 3: Let locationURL be internalResponse’s location URL given request’s current URL’s fragment.
     let location_url = response.actual_response().location_url.clone();
     let location_url = match location_url {
-        // Step 2
+        // Step 4: If locationURL is null, then return response.
         None => return response,
-        // Step 3
+        // Step 5: If locationURL is failure, then return a network error.
         Some(Err(err)) => {
             return Response::network_error(NetworkError::Internal(
                 "Location URL parse failure: ".to_owned() + &err,
             ));
         },
-        // Step 4
+        // Step 6: If locationURL’s scheme is not an HTTP(S) scheme, then return a network error.
         Some(Ok(ref url)) if !matches!(url.scheme(), "http" | "https") => {
             return Response::network_error(NetworkError::Internal(
                 "Location URL not an HTTP(S) scheme".into(),
@@ -927,6 +928,103 @@ pub async fn http_redirect_fetch(
         Some(Ok(url)) => url,
     };
 
+    // Step 7: If request’s redirect count is 20, then return a network error.
+    if request.redirect_count >= 20 {
+        return Response::network_error(NetworkError::Internal("Too many redirects".into()));
+    }
+
+    // Step 8: Increase request’s redirect count by 1.
+    request.redirect_count += 1;
+
+    // Step 9: If request’s mode is "cors", locationURL includes credentials, and request’s origin
+    // is not same origin with locationURL’s origin, then return a network error.
+    let same_origin = match request.origin {
+        Origin::Origin(ref origin) => *origin == location_url.origin(),
+        Origin::Client => panic!(
+            "Request origin should not be client for {}",
+            request.current_url()
+        ),
+    };
+
+    let has_credentials = has_credentials(&location_url);
+
+    if request.mode == RequestMode::CorsMode && !same_origin && has_credentials {
+        return Response::network_error(NetworkError::Internal(
+            "Cross-origin credentials check failed".into(),
+        ));
+    }
+
+    // Step 10: If request’s response tainting is "cors" and locationURL includes credentials, then
+    // return a network error.
+    if request.response_tainting == ResponseTainting::CorsTainting && has_credentials {
+        return Response::network_error(NetworkError::Internal(
+            "Cross-origin resource redirecting to a same-origin URL".into(),
+        ));
+    }
+
+    // Step 11: If internalResponse’s status is not 303, request’s body is non-null, and request’s
+    // body’s source is null, then return a network error.
+    if response
+        .actual_response()
+        .status
+        .as_ref()
+        .map_or(true, |s| s.0 != StatusCode::SEE_OTHER) &&
+        request.body.as_ref().is_some_and(|b| b.source_is_null())
+    {
+        return Response::network_error(NetworkError::Internal("Request body is not done".into()));
+    }
+
+    // Step 12: If one of the following is true:
+    if response
+        .actual_response()
+        .status
+        .as_ref()
+        .is_some_and(|(code, _)| {
+            // internalResponse’s status is 301 or 302 and request’s method is `POST`
+            ((*code == StatusCode::MOVED_PERMANENTLY || *code == StatusCode::FOUND) &&
+                request.method == Method::POST) ||
+                // internalResponse’s status is 303 and request’s method is not `GET` or `HEAD`
+                (*code == StatusCode::SEE_OTHER &&
+                    request.method != Method::HEAD &&
+                    request.method != Method::GET)
+        })
+    {
+        // Step 12.1: Set request’s method to `GET` and request’s body to null.
+        request.method = Method::GET;
+        request.body = None;
+
+        // Step 12.2: =For each headerName of request-body-header name, delete headerName from
+        // request’s header list.
+        for name in &[
+            CONTENT_ENCODING,
+            CONTENT_LANGUAGE,
+            CONTENT_LOCATION,
+            CONTENT_TYPE,
+        ] {
+            request.headers.remove(name);
+        }
+    }
+
+    // Step 13: If request’s current URL’s origin is not same origin with locationURL’s origin, then
+    // for each headerName of CORS non-wildcard request-header name, delete headerName from
+    // request’s header list.
+    if location_url.origin() != request.current_url().origin() {
+        for name in &[AUTHORIZATION] {
+            request.headers.remove(name);
+        }
+    }
+
+    // Step 14: If request’s body is non-null, then set request’s body to the body of the result of
+    // safely extracting request’s body’s source.
+    if let Some(body) = request.body.as_mut() {
+        body.extract_source();
+    }
+
+    // Step 15: Let timingInfo be fetchParams’s timing info.
+    // Step 16: Set timingInfo’s redirect end time and post-redirect start time to the coarsened
+    // shared current time given fetchParams’s cross-origin isolated capability.
+    // Step 17: If timingInfo’s redirect start time is 0, then set timingInfo’s redirect start time
+    // to timingInfo’s start time.
     // Step 1 of https://w3c.github.io/resource-timing/#dom-performanceresourcetiming-fetchstart
     // TODO: check origin and timing allow check
     context
@@ -958,87 +1056,10 @@ pub async fn http_redirect_fetch(
             ResourceTimeValue::RedirectStart,
         )); // updates start_time only if redirect_start is nonzero (implying TAO)
 
-    // Step 5
-    if request.redirect_count >= 20 {
-        return Response::network_error(NetworkError::Internal("Too many redirects".into()));
-    }
-
-    // Step 6
-    request.redirect_count += 1;
-
-    // Step 7
-    let same_origin = match request.origin {
-        Origin::Origin(ref origin) => *origin == location_url.origin(),
-        Origin::Client => panic!(
-            "Request origin should not be client for {}",
-            request.current_url()
-        ),
-    };
-    let has_credentials = has_credentials(&location_url);
-
-    if request.mode == RequestMode::CorsMode && !same_origin && has_credentials {
-        return Response::network_error(NetworkError::Internal(
-            "Cross-origin credentials check failed".into(),
-        ));
-    }
-
-    // Step 8
-    if cors_flag && has_credentials {
-        return Response::network_error(NetworkError::Internal("Credentials check failed".into()));
-    }
-
-    // Step 9
-    if response
-        .actual_response()
-        .status
-        .as_ref()
-        .map_or(true, |s| s.0 != StatusCode::SEE_OTHER) &&
-        request.body.as_ref().is_some_and(|b| b.source_is_null())
-    {
-        return Response::network_error(NetworkError::Internal("Request body is not done".into()));
-    }
-
-    // Step 10
-    if cors_flag && location_url.origin() != request.current_url().origin() {
-        request.origin = Origin::Origin(ImmutableOrigin::new_opaque());
-    }
-
-    // Step 11
-    if response
-        .actual_response()
-        .status
-        .as_ref()
-        .is_some_and(|(code, _)| {
-            ((*code == StatusCode::MOVED_PERMANENTLY || *code == StatusCode::FOUND) &&
-                request.method == Method::POST) ||
-                (*code == StatusCode::SEE_OTHER &&
-                    request.method != Method::HEAD &&
-                    request.method != Method::GET)
-        })
-    {
-        // Step 11.1
-        request.method = Method::GET;
-        request.body = None;
-        // Step 11.2
-        for name in &[
-            CONTENT_ENCODING,
-            CONTENT_LANGUAGE,
-            CONTENT_LOCATION,
-            CONTENT_TYPE,
-        ] {
-            request.headers.remove(name);
-        }
-    }
-
-    // Step 12
-    if let Some(body) = request.body.as_mut() {
-        body.extract_source();
-    }
-
-    // Step 13
+    // Step 18: Append locationURL to request’s URL list.
     request.url_list.push(location_url);
 
-    // Step 14
+    // Step 19: Invoke set request’s referrer policy on redirect on request and internalResponse.
     if let Some(referrer_policy) = response
         .actual_response()
         .headers
@@ -1047,9 +1068,10 @@ pub async fn http_redirect_fetch(
         request.referrer_policy = Some(referrer_policy.into());
     }
 
-    // Step 15
+    // Step 20/21: If request’s redirect mode is "manual", then:
     let recursive_flag = request.redirect_mode != RedirectMode::Manual;
 
+    // Step 22: Return the result of running main fetch given fetchParams and recursive.
     let fetch_response = main_fetch(
         request,
         cache,
@@ -1069,6 +1091,7 @@ pub async fn http_redirect_fetch(
         .set_attribute(ResourceAttribute::RedirectEnd(
             RedirectEndValue::ResponseEnd,
         ));
+
     redirect_end_timer.neuter();
 
     fetch_response
