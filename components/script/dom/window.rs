@@ -111,6 +111,7 @@ use crate::dom::bindings::trace::{JSTraceable, RootedTraceableBox};
 use crate::dom::bindings::utils::GlobalStaticData;
 use crate::dom::bindings::weakref::DOMTracker;
 use crate::dom::bluetooth::BluetoothExtraPermissionData;
+use crate::dom::cookiestore::CookieStore;
 use crate::dom::crypto::Crypto;
 use crate::dom::cssstyledeclaration::{CSSModificationAccess, CSSStyleDeclaration, CSSStyleOwner};
 use crate::dom::customelementregistry::CustomElementRegistry;
@@ -208,6 +209,7 @@ pub struct Window {
     session_storage: MutNullableDom<Storage>,
     local_storage: MutNullableDom<Storage>,
     status: DomRefCell<DOMString>,
+    cookie_store: MutNullableDom<CookieStore>,
 
     /// For sending timeline markers. Will be ignored if
     /// no devtools server
@@ -833,6 +835,11 @@ impl WindowMethods for Window {
     fn LocalStorage(&self) -> DomRoot<Storage> {
         self.local_storage
             .or_init(|| Storage::new(self, StorageType::Local))
+    }
+
+    fn CookieStore(&self) -> DomRoot<CookieStore> {
+        self.cookie_store
+            .or_init(|| CookieStore::new(self.upcast::<GlobalScope>()))
     }
 
     // https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html#dfn-GlobalCrypto
@@ -2606,6 +2613,7 @@ impl Window {
             screen: Default::default(),
             session_storage: Default::default(),
             local_storage: Default::default(),
+            cookie_store: Default::default(),
             status: DomRefCell::new(DOMString::new()),
             parent_info,
             dom_static: GlobalStaticData::new(),

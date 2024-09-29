@@ -255,6 +255,7 @@ pub mod comment;
 pub mod compositionevent;
 pub mod console;
 pub mod constantsourcenode;
+pub mod cookiestore;
 mod create;
 pub mod crypto;
 pub mod cryptokey;

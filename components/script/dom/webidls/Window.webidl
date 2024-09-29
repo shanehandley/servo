@@ -191,3 +191,9 @@ partial interface Window {
 dictionary WindowPostMessageOptions : StructuredSerializeOptions {
    USVString targetOrigin = "/";
 };
+
+// https://wicg.github.io/cookie-store/#Window
+[SecureContext]
+partial interface Window {
+  [SameObject] readonly attribute CookieStore cookieStore;
+};
