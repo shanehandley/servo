@@ -698,12 +698,12 @@ pub fn should_be_blocked_due_to_nosniff(
     destination: Destination,
     response_headers: &HeaderMap,
 ) -> bool {
-    // Step 1
+    // Step 1: If determine nosniff with response’s header list is false, then return allowed.
     if !determine_nosniff(response_headers) {
         return false;
     }
 
-    // Step 2
+    // Step 2: Let mimeType be the result of extracting a MIME type from response’s header list.
     // Note: an invalid MIME type will produce a `None`.
     let mime_type = extract_mime_type_as_mime(response_headers);
 
@@ -734,17 +734,20 @@ pub fn should_be_blocked_due_to_nosniff(
             .any(|mime| mime.type_() == mime_type.type_() && mime.subtype() == mime_type.subtype())
     }
 
+    // Step 3: Let destination be request’s destination.
     match mime_type {
-        // Step 4
+        // Step 4: If destination is script-like and mimeType is failure or is not a JavaScript MIME
+        // type, then return blocked.
         Some(ref essence) if destination.is_script_like() => !is_javascript_mime_type(&essence),
 
-        // Step 5
+        // Step 5: If destination is "style" and mimeType is failure or its essence is not
+        // "text/css", then return blocked.
         Some(ref m) if destination == Destination::Style => {
             m.type_() != mime::TEXT && m.subtype() != mime::CSS
         },
-
         None if destination == Destination::Style || destination.is_script_like() => true,
-        // Step 6
+
+        // Step 6: Return allowed.
         _ => false,
     }
 }
@@ -754,19 +757,22 @@ fn should_be_blocked_due_to_mime_type(
     destination: Destination,
     response_headers: &HeaderMap,
 ) -> bool {
-    // Step 1
+    // Step 1: Let mimeType be the result of extracting a MIME type from response’s header list.
     let mime_type = match extract_mime_type_as_mime(response_headers) {
         Some(essence) => essence,
-        // Step 2
+        // Step 2: If mimeType is failure, then return allowed.
         None => return false,
     };
 
-    // Step 3-5
+    // Step 3: Let destination be request’s destination.
     destination.is_script_like() &&
+    // Step 4: If destination is script-like and one of the following is true, then return blocked:
         match mime_type.type_() {
+            // mimeType’s essence starts with "audio/", "image/", or "video/".
             mime::AUDIO | mime::VIDEO | mime::IMAGE => true,
+            // mimeType’s essence is "text/csv".
             mime::TEXT if mime_type.subtype() == mime::CSV => true,
-            // Step 4
+            // Step 5: Return allowed.
             _ => false,
         }
 }
