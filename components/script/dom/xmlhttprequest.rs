@@ -25,6 +25,7 @@ use js::rust::wrappers::JS_ParseJSON;
 use js::rust::HandleObject;
 use js::typedarray::{ArrayBuffer, ArrayBufferU8};
 use mime::{self, Mime, Name};
+use net_traits::fetch::headers::extract_mime_type_as_mime;
 use net_traits::http_status::HttpStatus;
 use net_traits::request::{
     CredentialsMode, Destination, Referrer, RequestBuilder, RequestId, RequestMode,
@@ -60,7 +61,7 @@ use crate::dom::document::{Document, DocumentSource, HasBrowsingContext, IsHTMLD
 use crate::dom::event::{Event, EventBubbles, EventCancelable};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
-use crate::dom::headers::{extract_mime_type, is_forbidden_request_header};
+use crate::dom::headers::is_forbidden_request_header;
 use crate::dom::node::Node;
 use crate::dom::performanceresourcetiming::InitiatorType;
 use crate::dom::progressevent::ProgressEvent;
@@ -1643,14 +1644,7 @@ impl XMLHttpRequest {
 
     /// <https://xhr.spec.whatwg.org/#response-mime-type>
     fn response_mime_type(&self) -> Option<Mime> {
-        return extract_mime_type(&self.response_headers.borrow())
-            .and_then(|mime_as_bytes| {
-                String::from_utf8(mime_as_bytes)
-                    .unwrap_or_default()
-                    .parse()
-                    .ok()
-            })
-            .or(Some(mime::TEXT_XML));
+        extract_mime_type_as_mime(&self.response_headers.borrow()).or(Some(mime::TEXT_XML))
     }
 
     /// <https://xhr.spec.whatwg.org/#final-mime-type>
