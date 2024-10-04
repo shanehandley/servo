@@ -671,7 +671,7 @@ async fn obtain_response(
                             (send_end - send_start).unsigned_abs(),
                             is_xhr,
                         ))
-                    // TODO: ^This is not right, connect_start is taken before contructing the
+                    // TODO: ^This is not right, connect_start is taken before constructing the
                     // request and connect_end at the end of it. send_start is takend before the
                     // connection too. I'm not sure it's currently possible to get the time at the
                     // point between the connection and the start of a request.
@@ -1109,8 +1109,6 @@ async fn http_network_or_cache_fetch(
     // httpFetchParams to fetchParams and httpRequest to request.
     let request_has_no_window = request.window == RequestWindow::NoWindow;
 
-    let mut http_request;
-
     let http_request = if request_has_no_window && request.redirect_mode == RedirectMode::Error {
         request
     }
@@ -1156,38 +1154,6 @@ async fn http_network_or_cache_fetch(
         content_length_header_value = Some(0);
     }
 
-    // Step 8.8: If contentLength is non-null, then set contentLengthHeaderValue to contentLength,
-    // serialized and isomorphic encoded.
-    if let Some(content_length_value) = content_length_value {
-        // Step 8.9: If contentLengthHeaderValue is non-null, then append
-        // (`Content-Length`, contentLengthHeaderValue) to httpRequest’s header list.
-        http_request
-            .headers
-            .typed_insert(ContentLength(content_length_value));
-
-        // Step 8.10: If contentLength is non-null and httpRequest’s keepalive is true, then:
-        if http_request.keep_alive {
-            // Step 8.10.1 Let inflightKeepaliveBytes be 0.
-            let mut inflight_keepalive_bytes = 0;
-
-            // Step 8.11: Let group be httpRequest’s client’s fetch group.
-            if let Some(ref client) = http_request.client {
-                // Step 8.10.4: For each fetchRecord of inflightRecords:
-                // Step 8.10.4.1: Let inflightRequest be fetchRecord’s request.
-                // Step 8.10.4.2: Increment inflightKeepaliveBytes by inflightRequest’s body’s length.
-                inflight_keepalive_bytes = client.fetch_group.borrow().body_length();
-            }
-
-            // Step 8.10.5: If the sum of contentLength and inflightKeepaliveBytes is greater than
-            // 64 kibibytes, then return a network error.
-            if content_length_value + inflight_keepalive_bytes as u64 > 65_536 {
-                return Response::network_error(NetworkError::Internal(
-                    "Request length exceeded".into(),
-                ));
-            }
-        }
-    }
-
     // Step 8.8 If contentLength is non-null, then set contentLengthHeaderValue to contentLength,
     // serialized and isomorphic encoded.
     // NOTE: The header will later be serialized using HeaderMap::typed_insert
@@ -1205,7 +1171,26 @@ async fn http_network_or_cache_fetch(
 
     // Step 8.10 If contentLength is non-null and httpRequest’s keepalive is true, then:
     if content_length.is_some() && http_request.keep_alive {
-        // TODO(#33616) Keepalive requires request's client object's fetch group
+        let content_length_value = content_length.unwrap();
+
+        // Step 8.10.1 Let inflightKeepaliveBytes be 0.
+        let mut inflight_keepalive_bytes = 0;
+
+        // Step 8.11: Let group be httpRequest’s client’s fetch group.
+        if let Some(ref client) = http_request.client {
+            // Step 8.10.4: For each fetchRecord of inflightRecords:
+            // Step 8.10.4.1: Let inflightRequest be fetchRecord’s request.
+            // Step 8.10.4.2: Increment inflightKeepaliveBytes by inflightRequest’s body’s length.
+            inflight_keepalive_bytes = client.fetch_group.borrow().body_length();
+        }
+
+        // Step 8.10.5: If the sum of contentLength and inflightKeepaliveBytes is greater than
+        // 64 kibibytes, then return a network error.
+        if content_length_value + inflight_keepalive_bytes as u64 > 65_536 {
+            return Response::network_error(NetworkError::Internal(
+                "Request length exceeded".into(),
+            ));
+        }
     }
 
     // Step 8.11: If httpRequest’s referrer is a URL, then:

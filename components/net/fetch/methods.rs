@@ -21,7 +21,9 @@ use mime::{self, Mime};
 use net_traits::filemanager_thread::{FileTokenCheck, RelativePos};
 use net_traits::http_status::HttpStatus;
 use net_traits::request::{
-    is_cors_safelisted_method, is_cors_safelisted_request_header, BodyChunkRequest, BodyChunkResponse, CredentialsMode, Destination, FetchRecord, Origin, RedirectMode, Referrer, Request, RequestMode, ResponseTainting, Window
+    is_cors_safelisted_method, is_cors_safelisted_request_header, BodyChunkRequest,
+    BodyChunkResponse, CredentialsMode, Destination, Origin, RedirectMode, Referrer, Request,
+    RequestMode, ResponseTainting, Window,
 };
 use net_traits::response::{Response, ResponseBody, ResponseType};
 use net_traits::{

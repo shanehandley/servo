@@ -112,10 +112,11 @@ pub enum ResponseTainting {
 }
 
 /// [Window](https://fetch.spec.whatwg.org/#concept-request-window)
-#[derive(Clone, Copy, MallocSizeOf, PartialEq)]
+#[derive(Clone, MallocSizeOf, PartialEq)]
 pub enum Window {
     NoWindow,
-    Client, // TODO: Environmental settings object
+    Client,
+    EnvironmentSettingsObject(EnvironmentSettingsObject),
 }
 
 /// [CORS settings attribute](https://html.spec.whatwg.org/multipage/#attr-crossorigin-anonymous)
@@ -185,15 +186,22 @@ pub enum FetchControllerState {
 pub struct FetchController {
     #[ignore_malloc_size_of = "Mutex heap size undefined"]
     state: Arc<Mutex<FetchControllerState>>,
-    timing_info: Option<bool>,
-    report_timing_steps: Option<bool>,
+    // The following relates to https://fetch.spec.whatwg.org/#fetch-finale where these are set
+    // according to request's timing info. For example, "Step 2: If fetchParams’s request’s
+    // destination is "document", then set fetchParams’s controller’s full timing info to
+    // fetchParams’s timing info.". We don't appear to do that step anywhere yet though.
+    timing_info: Option<bool>,                // TODO
+    report_timing_steps: Option<bool>,        // TODO
     serialized_abort_reason: Option<bool>,    // TODO
     next_manual_redirect_steps: Option<bool>, // TODO
 }
 
 impl PartialEq for FetchController {
     fn eq(&self, other: &Self) -> bool {
-        self.timing_info == other.timing_info && self.report_timing_steps == other.report_timing_steps && self.serialized_abort_reason == other.serialized_abort_reason && self.next_manual_redirect_steps == other.next_manual_redirect_steps
+        self.timing_info == other.timing_info &&
+            self.report_timing_steps == other.report_timing_steps &&
+            self.serialized_abort_reason == other.serialized_abort_reason &&
+            self.next_manual_redirect_steps == other.next_manual_redirect_steps
     }
 }
 
@@ -215,23 +223,31 @@ impl FetchController {
 
     /// <https://fetch.spec.whatwg.org/#fetch-controller-process-the-next-manual-redirect>
     pub fn process_next_manual_redirect(&self) {
-        todo!()
+        // TODO
     }
 
     /// <https://fetch.spec.whatwg.org/#extract-full-timing-info>
     pub fn extract_full_timing_info(&self) {
-        todo!()
+        // TODO
     }
 
+    /// <https://fetch.spec.whatwg.org/#fetch-controller-abort>
     pub fn abort(&self, _error: Option<bool>) {
-        // self.state.lock().expect("dddd").(FetchControllerState::Aborted);
-        todo!()
+        // Step 1: Set controller's state to "aborted"
+        *self
+            .state
+            .lock()
+            .expect("Failed to update FetchController's state") = FetchControllerState::Aborted;
+
+        // TODO error handling
     }
 
     /// <https://fetch.spec.whatwg.org/#fetch-controller-terminate>
     pub fn terminate(&self) {
-        // self.state.replace(FetchControllerState::Terminated);
-        todo!()
+        *self
+            .state
+            .lock()
+            .expect("Failed to update FetchController's state") = FetchControllerState::Terminated;
     }
 }
 
@@ -247,7 +263,10 @@ impl From<Request> for FetchRecordRequest {
         FetchRecordRequest {
             keep_alive: request.keep_alive,
             done_flag: request.done_flag,
-            body_length: request.body.as_ref().map_or(0, |body| body.total_bytes.unwrap_or(0)),
+            body_length: request
+                .body
+                .as_ref()
+                .map_or(0, |body| body.total_bytes.unwrap_or(0)),
         }
     }
 }
@@ -278,7 +297,8 @@ pub struct FetchGroup {
 
 impl PartialEq for FetchGroup {
     fn eq(&self, other: &Self) -> bool {
-        false
+        // TODO
+        self.body_length() == other.body_length()
     }
 }
 
@@ -293,23 +313,31 @@ impl FetchGroup {
     /// controller is non-null, and whose request’s done flag is unset or keepalive is false,
     /// terminate the fetch record’s controller.
     pub fn terminate(&self) {
-        self.records.lock().expect("ahhhh").iter().for_each(|record| {
-            if record.request.done_flag.is_none() && record.request.keep_alive == false {
-                record.controller.terminate();
-            }
-        });
+        self.records
+            .lock()
+            .expect("ahhhh")
+            .iter()
+            .for_each(|record| {
+                if record.request.done_flag.is_none() && record.request.keep_alive == false {
+                    record.controller.terminate();
+                }
+            });
     }
 
     /// Computes the total body length of each request associated with this fetch group
     pub fn body_length(&self) -> usize {
-        self.records.lock().expect("ahhhh").iter().fold(0, |acc, element| acc + element.request.body_length)
+        self.records
+            .lock()
+            .expect("ahhhh")
+            .iter()
+            .fold(0, |acc, element| acc + element.request.body_length)
     }
 }
 
 impl Default for FetchGroup {
     fn default() -> FetchGroup {
         FetchGroup {
-            records: Arc::new(Mutex::new(Vec::new()))
+            records: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -348,7 +376,7 @@ pub struct EnvironmentSettingsObject {
     /// <https://fetch.spec.whatwg.org/#fetch-groups>
     pub fetch_group: FetchGroup,
     /// <https://html.spec.whatwg.org/multipage/#concept-environment-execution-ready-flag>
-    execution_ready_flag: bool
+    execution_ready_flag: bool,
 }
 
 impl EnvironmentSettingsObject {
@@ -359,7 +387,7 @@ impl EnvironmentSettingsObject {
             origin,
             creation_url,
             fetch_group: FetchGroup::default(),
-            execution_ready_flag: false
+            execution_ready_flag: false,
         }
     }
 }
@@ -714,9 +742,8 @@ pub struct Request {
     pub https_state: HttpsState,
     /// Servo internal: if crash details are present, trigger a crash error page with these details.
     pub crash: Option<String>,
-    /// https://fetch.spec.whatwg.org/#done-flag
+    /// <https://fetch.spec.whatwg.org/#done-flag>
     pub done_flag: Option<bool>,
-    pub fetch_controller: FetchController,
 }
 
 impl Request {
@@ -760,7 +787,6 @@ impl Request {
             https_state,
             crash: None,
             done_flag: None,
-            fetch_controller: FetchController::new()
         }
     }
 
@@ -809,7 +835,7 @@ impl Request {
         }
     }
 
-    /// Step 16.1 & 16.2 from 
+    /// <https://fetch.spec.whatwg.org/#concept-fetch> Step 16.1 & 16.2
     pub fn append_fetch_record(&mut self) {
         if let Some(settings) = &self.client {
             // Step 16.1: Let record be a new fetch record whose request is request and controller

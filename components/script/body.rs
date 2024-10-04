@@ -439,17 +439,17 @@ impl ExtractedBody {
 
 /// <https://fetch.spec.whatwg.org/#concept-bodyinit-extract>
 pub trait Extractable {
-    fn extract(&self, global: &GlobalScope) -> Fallible<ExtractedBody>;
+    fn extract(&self, global: &GlobalScope, keepalive: bool) -> Fallible<ExtractedBody>;
 }
 
 impl Extractable for BodyInit {
     // https://fetch.spec.whatwg.org/#concept-bodyinit-extract
-    fn extract(&self, global: &GlobalScope) -> Fallible<ExtractedBody> {
+    fn extract(&self, global: &GlobalScope, keepalive: bool) -> Fallible<ExtractedBody> {
         match self {
-            BodyInit::String(ref s) => s.extract(global),
-            BodyInit::URLSearchParams(ref usp) => usp.extract(global),
-            BodyInit::Blob(ref b) => b.extract(global),
-            BodyInit::FormData(ref formdata) => formdata.extract(global),
+            BodyInit::String(ref s) => s.extract(global, false),
+            BodyInit::URLSearchParams(ref usp) => usp.extract(global, false),
+            BodyInit::Blob(ref b) => b.extract(global, false),
+            BodyInit::FormData(ref formdata) => formdata.extract(global, false),
             BodyInit::ArrayBuffer(ref typedarray) => {
                 let bytes = typedarray.to_vec();
                 let total_bytes = bytes.len();
@@ -473,8 +473,12 @@ impl Extractable for BodyInit {
                 })
             },
             BodyInit::ReadableStream(stream) => {
-                // TODO:
                 // 1. If the keepalive flag is set, then throw a TypeError.
+                if keepalive == true {
+                    return Err(Error::Type(
+                        "Cannot extract a ReadableStream if keepalive is true".to_string(),
+                    ));
+                }
 
                 if stream.is_locked() || stream.is_disturbed() {
                     return Err(Error::Type(
@@ -494,7 +498,7 @@ impl Extractable for BodyInit {
 }
 
 impl Extractable for Vec<u8> {
-    fn extract(&self, global: &GlobalScope) -> Fallible<ExtractedBody> {
+    fn extract(&self, global: &GlobalScope, _keepalive: bool) -> Fallible<ExtractedBody> {
         let bytes = self.clone();
         let total_bytes = self.len();
         let stream = ReadableStream::new_from_bytes(global, bytes);
@@ -509,7 +513,7 @@ impl Extractable for Vec<u8> {
 }
 
 impl Extractable for Blob {
-    fn extract(&self, _global: &GlobalScope) -> Fallible<ExtractedBody> {
+    fn extract(&self, _global: &GlobalScope, _keepalive: bool) -> Fallible<ExtractedBody> {
         let blob_type = self.Type();
         let content_type = if blob_type.as_ref().is_empty() {
             None
@@ -527,7 +531,7 @@ impl Extractable for Blob {
 }
 
 impl Extractable for DOMString {
-    fn extract(&self, global: &GlobalScope) -> Fallible<ExtractedBody> {
+    fn extract(&self, global: &GlobalScope, _keepalive: bool) -> Fallible<ExtractedBody> {
         let bytes = self.as_bytes().to_owned();
         let total_bytes = bytes.len();
         let content_type = Some(DOMString::from("text/plain;charset=UTF-8"));
@@ -542,7 +546,7 @@ impl Extractable for DOMString {
 }
 
 impl Extractable for FormData {
-    fn extract(&self, global: &GlobalScope) -> Fallible<ExtractedBody> {
+    fn extract(&self, global: &GlobalScope, _keepalive: bool) -> Fallible<ExtractedBody> {
         let boundary = generate_boundary();
         let bytes = encode_multipart_form_data(&mut self.datums(), boundary.clone(), UTF_8);
         let total_bytes = bytes.len();
@@ -561,7 +565,7 @@ impl Extractable for FormData {
 }
 
 impl Extractable for URLSearchParams {
-    fn extract(&self, global: &GlobalScope) -> Fallible<ExtractedBody> {
+    fn extract(&self, global: &GlobalScope, _keepalive: bool) -> Fallible<ExtractedBody> {
         let bytes = self.serialize_utf8().into_bytes();
         let total_bytes = bytes.len();
         let content_type = Some(DOMString::from(
