@@ -1105,6 +1105,9 @@ async fn http_network_or_cache_fetch(
     done_chan: &mut DoneChannel,
     context: &FetchContext,
 ) -> Response {
+    // Step 3: Let httpRequest be null.
+    let mut http_request;
+
     // Step 4: Let response be null.
     let mut response: Option<Response> = None;
 
@@ -1115,13 +1118,10 @@ async fn http_network_or_cache_fetch(
     // httpFetchParams to fetchParams and httpRequest to request.
     let request_has_no_window = request.window == RequestWindow::NoWindow;
 
-    let mut http_request;
-
     let http_request = if request_has_no_window && request.redirect_mode == RedirectMode::Error {
         request
     } else {
-        // Step 8.2: Set httpRequest to a clone of request.
-        // Step 8.2.1, .2.2 and .2.3 and 2.4
+        // Step 8.2.1: Set httpRequest to a clone of request.
         http_request = request.clone();
 
         &mut http_request

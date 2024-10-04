@@ -193,7 +193,10 @@ pub struct FetchController {
 
 impl PartialEq for FetchController {
     fn eq(&self, other: &Self) -> bool {
-        self.timing_info == other.timing_info && self.report_timing_steps == other.report_timing_steps && self.serialized_abort_reason == other.serialized_abort_reason && self.next_manual_redirect_steps == other.next_manual_redirect_steps
+        self.timing_info == other.timing_info &&
+            self.report_timing_steps == other.report_timing_steps &&
+            self.serialized_abort_reason == other.serialized_abort_reason &&
+            self.next_manual_redirect_steps == other.next_manual_redirect_steps
     }
 }
 
@@ -247,7 +250,10 @@ impl From<Request> for FetchRecordRequest {
         FetchRecordRequest {
             keep_alive: request.keep_alive,
             done_flag: request.done_flag,
-            body_length: request.body.as_ref().map_or(0, |body| body.total_bytes.unwrap_or(0)),
+            body_length: request
+                .body
+                .as_ref()
+                .map_or(0, |body| body.total_bytes.unwrap_or(0)),
         }
     }
 }
@@ -293,23 +299,31 @@ impl FetchGroup {
     /// controller is non-null, and whose request’s done flag is unset or keepalive is false,
     /// terminate the fetch record’s controller.
     pub fn terminate(&self) {
-        self.records.lock().expect("ahhhh").iter().for_each(|record| {
-            if record.request.done_flag.is_none() && record.request.keep_alive == false {
-                record.controller.terminate();
-            }
-        });
+        self.records
+            .lock()
+            .expect("ahhhh")
+            .iter()
+            .for_each(|record| {
+                if record.request.done_flag.is_none() && record.request.keep_alive == false {
+                    record.controller.terminate();
+                }
+            });
     }
 
     /// Computes the total body length of each request associated with this fetch group
     pub fn body_length(&self) -> usize {
-        self.records.lock().expect("ahhhh").iter().fold(0, |acc, element| acc + element.request.body_length)
+        self.records
+            .lock()
+            .expect("ahhhh")
+            .iter()
+            .fold(0, |acc, element| acc + element.request.body_length)
     }
 }
 
 impl Default for FetchGroup {
     fn default() -> FetchGroup {
         FetchGroup {
-            records: Arc::new(Mutex::new(Vec::new()))
+            records: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -348,7 +362,7 @@ pub struct EnvironmentSettingsObject {
     /// <https://fetch.spec.whatwg.org/#fetch-groups>
     pub fetch_group: FetchGroup,
     /// <https://html.spec.whatwg.org/multipage/#concept-environment-execution-ready-flag>
-    execution_ready_flag: bool
+    execution_ready_flag: bool,
 }
 
 impl EnvironmentSettingsObject {
@@ -359,7 +373,7 @@ impl EnvironmentSettingsObject {
             origin,
             creation_url,
             fetch_group: FetchGroup::default(),
-            execution_ready_flag: false
+            execution_ready_flag: false,
         }
     }
 }
@@ -760,7 +774,7 @@ impl Request {
             https_state,
             crash: None,
             done_flag: None,
-            fetch_controller: FetchController::new()
+            fetch_controller: FetchController::new(),
         }
     }
 
@@ -809,7 +823,7 @@ impl Request {
         }
     }
 
-    /// Step 16.1 & 16.2 from 
+    /// Step 16.1 & 16.2 from
     pub fn append_fetch_record(&mut self) {
         if let Some(settings) = &self.client {
             // Step 16.1: Let record be a new fetch record whose request is request and controller
