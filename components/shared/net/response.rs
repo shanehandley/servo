@@ -120,6 +120,8 @@ pub struct Response {
     /// track network metrics
     #[ignore_malloc_size_of = "Mutex heap size undefined"]
     pub resource_timing: Arc<Mutex<ResourceFetchTiming>>,
+    /// <https://fetch.spec.whatwg.org/#concept-response-timing-allow-passed>
+    pub timing_allow_passed: Option<bool>,
 }
 
 impl Response {
@@ -142,6 +144,7 @@ impl Response {
             return_internal: true,
             aborted: Arc::new(AtomicBool::new(false)),
             resource_timing: Arc::new(Mutex::new(resource_timing)),
+            timing_allow_passed: None,
         }
     }
 
@@ -175,6 +178,7 @@ impl Response {
             resource_timing: Arc::new(Mutex::new(ResourceFetchTiming::new(
                 ResourceTimingType::Error,
             ))),
+            timing_allow_passed: None,
         }
     }
 
