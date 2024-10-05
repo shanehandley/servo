@@ -35,9 +35,9 @@ use hyper_serde::Serde;
 use ipc_channel::ipc::{self, IpcSender};
 use ipc_channel::router::ROUTER;
 use log::{debug, error, info, log_enabled, warn};
+use net_traits::fetch::headers::get_decode_and_split_header_name;
 use net_traits::http_status::HttpStatus;
 use net_traits::pub_domains::reg_suffix;
-use net_traits::request::Origin::Origin as SpecificOrigin;
 use net_traits::request::{
     get_cors_unsafe_header_names, is_cors_non_wildcard_request_header_name,
     is_cors_safelisted_method, is_cors_safelisted_request_header, BodyChunkRequest,
@@ -791,7 +791,15 @@ pub async fn http_fetch(
 
         // Substep 4
         if cors_flag && cors_check(request, &fetch_result).is_err() {
+            context.timing.lock().unwrap().fetch_precondition_failed();
+
             return Response::network_error(NetworkError::Internal("CORS check failed".into()));
+        }
+
+        // Step 4.5: If the TAO check for request and response returns failure, then set request's
+        // timing allow failed flag.
+        if tao_check(request, &fetch_result).is_err() {
+            request.timing_allow_failed = Some(true);
         }
 
         fetch_result.return_internal = false;
@@ -801,7 +809,7 @@ pub async fn http_fetch(
     // response is guaranteed to be something by now
     let mut response = response.unwrap();
 
-    // Step 5
+    // Step 6: If internalResponse’s status is a redirect status:
     if response
         .actual_response()
         .status
@@ -1813,36 +1821,20 @@ async fn http_network_fetch(
         _ => warn!("Failed to receive confirmation request was streamed without error."),
     }
 
-    let header_strings: Vec<&str> = res
-        .headers()
-        .get_all("Timing-Allow-Origin")
-        .iter()
-        .map(|header_value| header_value.to_str().unwrap_or(""))
-        .collect();
-    let wildcard_present = header_strings.iter().any(|header_str| *header_str == "*");
-    // The spec: https://www.w3.org/TR/resource-timing-2/#sec-timing-allow-origin
-    // says that a header string is either an origin or a wildcard so we can just do a straight
-    // check against the document origin
-    let req_origin_in_timing_allow = header_strings
-        .iter()
-        .any(|header_str| match request.origin {
-            SpecificOrigin(ref immutable_request_origin) => {
-                *header_str == immutable_request_origin.ascii_serialization()
-            },
-            _ => false,
-        });
-
-    let is_same_origin = request.url_list.iter().all(|url| match request.origin {
-        SpecificOrigin(ref immutable_request_origin) => url.origin() == *immutable_request_origin,
-        _ => false,
-    });
-
-    if !(is_same_origin || req_origin_in_timing_allow || wildcard_present) {
-        context.timing.lock().unwrap().mark_timing_check_failed();
+    if request.timing_allow_failed.is_none() {
+        if let Ok(mut timing) = context.timing.lock() {
+            timing.mark_timing_check_failed()
+        }
     }
 
     let timing = context.timing.lock().unwrap().clone();
     let mut response = Response::new(url.clone(), timing);
+
+    // Step 18: If request’s timing allow failed flag is unset, then set internalResponse’s timing
+    // allow passed flag.
+    if request.timing_allow_failed.is_none() {
+        response.timing_allow_passed = Some(true)
+    }
 
     response.status = HttpStatus::new(
         res.status(),
@@ -2218,6 +2210,53 @@ fn cors_check(request: &Request, response: &Response) -> Result<(), ()> {
     }
 
     // Step 8
+    Err(())
+}
+
+/// Timing Allow Origin (TAO) Check
+///
+/// <https://fetch.spec.whatwg.org/#concept-tao-check>
+fn tao_check(request: &Request, response: &Response) -> Result<(), ()> {
+    // Step 1: Assert: request’s origin is not "client".
+    assert_ne!(request.origin, Origin::Client);
+
+    // Step 2: If request’s timing allow failed flag is set, then return failure.
+    if request.timing_allow_failed.is_some() {
+        return Err(());
+    }
+
+    // Step 3: Let values be the result of getting, decoding, and splitting `Timing-Allow-Origin`
+    // from response’s header list.
+    let values = get_decode_and_split_header_name("timing-allow-origin", &response.headers)
+        .unwrap_or(vec![]);
+
+    let request_origin = match &request.origin {
+        Origin::Origin(origin) => origin,
+        Origin::Client => unreachable!(),
+    };
+
+    // Step 4: If values contains "*", then return success.
+    // Step 5: If values contains the result of serializing a request origin with request, then
+    // return success.
+    if values
+        .iter()
+        .any(|v| v == "*" || v == &request_origin.ascii_serialization())
+    {
+        return Ok(());
+    }
+
+    // Step 6: If request’s mode is "navigate" and request’s current URL’s origin is not same origin
+    // with request’s origin, then return failure.
+    if request.mode == RequestMode::Navigate && &request.current_url().origin() != request_origin {
+        return Err(());
+    }
+
+    // Step 7: If request’s response tainting is "basic", then return success.
+    if request.response_tainting == ResponseTainting::Basic {
+        return Ok(());
+    }
+
+    // Step 8: Return failure.
     Err(())
 }
 

@@ -510,6 +510,9 @@ pub struct ResourceFetchTiming {
     pub connect_start: Option<CrossProcessInstant>,
     pub connect_end: Option<CrossProcessInstant>,
     pub start_time: Option<CrossProcessInstant>,
+    /// A flag which indicates that this timing entry should not be included
+    /// in the performance timeline
+    include_in_timeline: bool,
 }
 
 pub enum RedirectStartValue {
@@ -572,6 +575,7 @@ impl ResourceFetchTiming {
             connect_end: None,
             response_end: None,
             start_time: None,
+            include_in_timeline: true,
         }
     }
 
@@ -636,6 +640,19 @@ impl ResourceFetchTiming {
         self.redirect_start = None;
         self.connect_start = None;
         self.connect_end = None;
+    }
+
+    /// If a resource fetch is aborted because it failed a fetch precondition (e.g. mixed content,
+    /// CORS restriction, CSP policy, etc), then this resource will not be included as a
+    /// PerformanceResourceTiming object in the Performance Timeline.
+    ///
+    /// <https://w3c.github.io/resource-timing/#resources-included-in-the-performanceresourcetiming-interface>
+    pub fn fetch_precondition_failed(&mut self) {
+        self.include_in_timeline = false;
+    }
+
+    pub fn should_submit_timing(&self) -> bool {
+        self.include_in_timeline
     }
 }
 

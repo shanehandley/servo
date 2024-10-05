@@ -510,6 +510,8 @@ pub struct Request {
     pub https_state: HttpsState,
     /// Servo internal: if crash details are present, trigger a crash error page with these details.
     pub crash: Option<String>,
+    /// <https://fetch.spec.whatwg.org/#timing-allow-failed>
+    pub timing_allow_failed: Option<bool>,
 }
 
 impl Request {
@@ -551,6 +553,7 @@ impl Request {
             csp_list: None,
             https_state,
             crash: None,
+            timing_allow_failed: None,
         }
     }
 
