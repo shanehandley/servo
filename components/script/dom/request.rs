@@ -154,6 +154,7 @@ fn request_is_locked(input: &Request) -> bool {
     input.is_locked()
 }
 
+#[allow(non_snake_case)]
 impl RequestMethods for Request {
     // https://fetch.spec.whatwg.org/#dom-request
     fn Constructor(
@@ -206,15 +207,15 @@ impl RequestMethods for Request {
             },
         }
 
-        // Step 7
-        // TODO: `entry settings object` is not implemented yet.
-        let origin = base_url.origin();
+        // Step 7: TODO this is a url origin, but it should be Immutable/Csp::Origin/Something...
+        let _origin = global.environment_settings_object().origin;
 
         // Step 8
         let mut window = Window::Client;
 
-        // Step 9
-        // TODO: `environment settings object` is not implemented in Servo yet.
+        // TODO: Implement environment settings object in Window::Client
+        // Step 9: If request’s window is an environment settings object and its origin is same
+        // origin with origin, then set window to request’s window.
 
         // Step 10
         if !init.window.handle().is_null_or_undefined() {
@@ -233,7 +234,7 @@ impl RequestMethods for Request {
         request.headers = temporary_request.headers.clone();
         request.unsafe_request = true;
         request.window = window;
-        // TODO: `entry settings object` is not implemented in Servo yet.
+        request.client = temporary_request.client;
         request.origin = Origin::Client;
         request.referrer = temporary_request.referrer;
         request.referrer_policy = temporary_request.referrer_policy;
@@ -276,18 +277,21 @@ impl RequestMethods for Request {
             if referrer.is_empty() {
                 request.referrer = NetTraitsRequestReferrer::NoReferrer;
             } else {
-                // Step 14.3.1
+                // Step 14.3.1: Let parsedReferrer be the result of parsing referrer with baseURL.
                 let parsed_referrer = base_url.join(referrer);
-                // Step 14.3.2
+
+                // Step 14.3.2: If parsedReferrer is failure, then throw a TypeError.
                 if parsed_referrer.is_err() {
                     return Err(Error::Type("Failed to parse referrer url".to_string()));
                 }
-                // Step 14.3.3
+                // Step 14.3.3: If one of the following is true:
                 if let Ok(parsed_referrer) = parsed_referrer {
+                    // parsedReferrer’s scheme is "about" and path is the string "client"
                     if (parsed_referrer.cannot_be_a_base() &&
                         parsed_referrer.scheme() == "about" &&
                         parsed_referrer.path() == "client") ||
-                        parsed_referrer.origin() != origin
+                        // parsedReferrer’s origin is not same origin with origin
+                        parsed_referrer.origin().same_origin(&global.origin())
                     {
                         request.referrer = global.get_referrer();
                     } else {
@@ -350,7 +354,13 @@ impl RequestMethods for Request {
             request.integrity_metadata = integrity;
         }
 
-        // Step 24 TODO: "If init["keepalive"] exists..."
+        let mut is_keepalive_request = false;
+
+        // Step 24: If init["keepalive"] exists, then set request’s keepalive to it.
+        if let Some(keep_alive) = init.keepalive.as_ref() {
+            request.keep_alive = *keep_alive;
+            is_keepalive_request = true;
+        }
 
         // Step 25.1
         if let Some(init_method) = init.method.as_ref() {
@@ -471,10 +481,9 @@ impl RequestMethods for Request {
 
         // Step 36-37
         if let Some(Some(ref init_body)) = init.body {
-            // Step 37.1 TODO "If init["keepalive"] exists and is true..."
-
-            // Step 37.2
-            let mut extracted_body = init_body.extract(global)?;
+            // Step 37.1: Let bodyWithType be the result of extracting init["body"], with keepalive
+            // set to request’s keepalive.
+            let mut extracted_body = init_body.extract(global, is_keepalive_request)?;
 
             // Step 37.3
             if let Some(contents) = extracted_body.content_type.take() {

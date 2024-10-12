@@ -13,6 +13,7 @@ use malloc_size_of_derive::MallocSizeOf;
 use mime::Mime;
 use serde::{Deserialize, Serialize};
 use servo_url::{ImmutableOrigin, ServoUrl};
+use uuid::Uuid;
 
 use crate::response::HttpsState;
 use crate::{ReferrerPolicy, ResourceTimingType};
@@ -111,10 +112,11 @@ pub enum ResponseTainting {
 }
 
 /// [Window](https://fetch.spec.whatwg.org/#concept-request-window)
-#[derive(Clone, Copy, MallocSizeOf, PartialEq)]
+#[derive(Clone, MallocSizeOf, PartialEq)]
 pub enum Window {
     NoWindow,
-    Client, // TODO: Environmental settings object
+    Client,
+    EnvironmentSettingsObject(EnvironmentSettingsObject),
 }
 
 /// [CORS settings attribute](https://html.spec.whatwg.org/multipage/#attr-crossorigin-anonymous)
@@ -167,6 +169,227 @@ pub enum BodyChunkRequest {
     Done,
     /// Signal the stream has errored(sent from script to script).
     Error,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub enum FetchControllerState {
+    Ongoing,
+    Terminated,
+    Aborted,
+}
+
+/// <https://fetch.spec.whatwg.org/#fetch-controller>
+///
+/// A fetch controller is a struct used to enable callers of fetch to perform certain operations on
+/// it after it has started.
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
+pub struct FetchController {
+    #[ignore_malloc_size_of = "Mutex heap size undefined"]
+    state: Arc<Mutex<FetchControllerState>>,
+    // The following relates to https://fetch.spec.whatwg.org/#fetch-finale where these are set
+    // according to request's timing info. For example, "Step 2: If fetchParams’s request’s
+    // destination is "document", then set fetchParams’s controller’s full timing info to
+    // fetchParams’s timing info.". We don't appear to do that step anywhere yet though.
+    timing_info: Option<bool>,                // TODO
+    report_timing_steps: Option<bool>,        // TODO
+    serialized_abort_reason: Option<bool>,    // TODO
+    next_manual_redirect_steps: Option<bool>, // TODO
+}
+
+impl PartialEq for FetchController {
+    fn eq(&self, other: &Self) -> bool {
+        self.timing_info == other.timing_info &&
+            self.report_timing_steps == other.report_timing_steps &&
+            self.serialized_abort_reason == other.serialized_abort_reason &&
+            self.next_manual_redirect_steps == other.next_manual_redirect_steps
+    }
+}
+
+impl FetchController {
+    pub fn new() -> FetchController {
+        FetchController {
+            state: Arc::new(Mutex::new(FetchControllerState::Ongoing)),
+            timing_info: None,
+            report_timing_steps: None,
+            serialized_abort_reason: None,
+            next_manual_redirect_steps: None,
+        }
+    }
+
+    /// <https://fetch.spec.whatwg.org/#finalize-and-report-timing>
+    // pub fn report_timing(self, global: &GlobalScope) {
+    //     todo!()
+    // }
+
+    /// <https://fetch.spec.whatwg.org/#fetch-controller-process-the-next-manual-redirect>
+    pub fn process_next_manual_redirect(&self) {
+        // TODO
+    }
+
+    /// <https://fetch.spec.whatwg.org/#extract-full-timing-info>
+    pub fn extract_full_timing_info(&self) {
+        // TODO
+    }
+
+    /// <https://fetch.spec.whatwg.org/#fetch-controller-abort>
+    pub fn abort(&self, _error: Option<bool>) {
+        // Step 1: Set controller's state to "aborted"
+        *self
+            .state
+            .lock()
+            .expect("Failed to update FetchController's state") = FetchControllerState::Aborted;
+
+        // TODO error handling
+    }
+
+    /// <https://fetch.spec.whatwg.org/#fetch-controller-terminate>
+    pub fn terminate(&self) {
+        *self
+            .state
+            .lock()
+            .expect("Failed to update FetchController's state") = FetchControllerState::Terminated;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct FetchRecordRequest {
+    keep_alive: bool,
+    done_flag: Option<bool>,
+    body_length: usize,
+}
+
+impl From<Request> for FetchRecordRequest {
+    fn from(request: Request) -> FetchRecordRequest {
+        FetchRecordRequest {
+            keep_alive: request.keep_alive,
+            done_flag: request.done_flag,
+            body_length: request
+                .body
+                .as_ref()
+                .map_or(0, |body| body.total_bytes.unwrap_or(0)),
+        }
+    }
+}
+
+/// <https://fetch.spec.whatwg.org/#concept-fetch-record>
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct FetchRecord {
+    request: FetchRecordRequest,
+    controller: FetchController,
+}
+
+/// Let record be a new fetch record whose request is request and controller is fetchParams’s controller.
+impl From<Request> for FetchRecord {
+    fn from(request: Request) -> FetchRecord {
+        FetchRecord {
+            request: FetchRecordRequest::from(request),
+            controller: FetchController::new(),
+        }
+    }
+}
+
+/// <https://fetch.spec.whatwg.org/#fetch-groups>
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
+pub struct FetchGroup {
+    #[ignore_malloc_size_of = "todo"]
+    records: Arc<Mutex<Vec<FetchRecord>>>,
+}
+
+impl PartialEq for FetchGroup {
+    fn eq(&self, other: &Self) -> bool {
+        // TODO
+        self.body_length() == other.body_length()
+    }
+}
+
+impl FetchGroup {
+    pub fn append(&self, record: FetchRecord) {
+        self.records.lock().expect("ahhhh").push(record);
+    }
+
+    /// <https://fetch.spec.whatwg.org/#concept-fetch-group-terminate>
+    ///
+    /// When a fetch group is terminated, for each associated fetch record whose fetch record’s
+    /// controller is non-null, and whose request’s done flag is unset or keepalive is false,
+    /// terminate the fetch record’s controller.
+    pub fn terminate(&self) {
+        self.records
+            .lock()
+            .expect("ahhhh")
+            .iter()
+            .for_each(|record| {
+                if record.request.done_flag.is_none() && record.request.keep_alive == false {
+                    record.controller.terminate();
+                }
+            });
+    }
+
+    /// Computes the total body length of each request associated with this fetch group
+    pub fn body_length(&self) -> usize {
+        self.records
+            .lock()
+            .expect("ahhhh")
+            .iter()
+            .fold(0, |acc, element| acc + element.request.body_length)
+    }
+}
+
+impl Default for FetchGroup {
+    fn default() -> FetchGroup {
+        FetchGroup {
+            records: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+/// An unique id for environment
+#[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct EnvironmentId(pub Uuid);
+
+/// A partial implementation of of the environment settings object. There are additional properties
+/// provided directly to the request which are candidates to be moved into this struct, in addition
+/// to other properties which are yet to be implemented.
+///
+/// <https://html.spec.whatwg.org/multipage/#environment-settings-object>
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct EnvironmentSettingsObject {
+    /// An opaque string that uniquely identifies this environment.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-id>
+    pub environment_id: EnvironmentId,
+    /// Null or a URL that represents the creation URL of the "top-level" environment. It is null
+    /// for workers and worklets.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-top-level-creation-url>
+    pub top_level_creation_url: Option<ServoUrl>,
+    /// An origin used in security checks
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-settings-object-origin>
+    pub origin: Origin, // ImmutableOrigin? CSP:Origin?
+    /// A URL that represents the location of the resource with which this environment is
+    /// associated.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-creation-url>
+    pub creation_url: Option<ServoUrl>,
+    /// Each environment settings object has an associated fetch group.
+    ///
+    /// <https://fetch.spec.whatwg.org/#fetch-groups>
+    pub fetch_group: FetchGroup,
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-execution-ready-flag>
+    execution_ready_flag: bool,
+}
+
+impl EnvironmentSettingsObject {
+    pub fn new(origin: Origin, creation_url: Option<ServoUrl>) -> EnvironmentSettingsObject {
+        EnvironmentSettingsObject {
+            environment_id: EnvironmentId(Uuid::new_v4()),
+            top_level_creation_url: None,
+            origin,
+            creation_url,
+            fetch_group: FetchGroup::default(),
+            execution_ready_flag: false,
+        }
+    }
 }
 
 /// The net component's view into <https://fetch.spec.whatwg.org/#bodies>
@@ -239,7 +462,7 @@ pub struct RequestBuilder {
     pub unsafe_request: bool,
     pub body: Option<RequestBody>,
     pub service_workers_mode: ServiceWorkersMode,
-    // TODO: client object
+    pub client: Option<EnvironmentSettingsObject>,
     pub destination: Destination,
     pub synchronous: bool,
     pub mode: RequestMode,
@@ -278,6 +501,7 @@ impl RequestBuilder {
             unsafe_request: false,
             body: None,
             service_workers_mode: ServiceWorkersMode::All,
+            client: None,
             destination: Destination::None,
             synchronous: false,
             mode: RequestMode::NoCors,
@@ -323,6 +547,11 @@ impl RequestBuilder {
 
     pub fn body(mut self, body: Option<RequestBody>) -> RequestBuilder {
         self.body = body;
+        self
+    }
+
+    pub fn client(mut self, environment: EnvironmentSettingsObject) -> RequestBuilder {
+        self.client = Some(environment);
         self
     }
 
@@ -414,6 +643,7 @@ impl RequestBuilder {
         request.headers = self.headers;
         request.unsafe_request = self.unsafe_request;
         request.body = self.body;
+        request.client = self.client;
         request.service_workers_mode = self.service_workers_mode;
         request.destination = self.destination;
         request.synchronous = self.synchronous;
@@ -457,7 +687,9 @@ pub struct Request {
     pub unsafe_request: bool,
     /// <https://fetch.spec.whatwg.org/#concept-request-body>
     pub body: Option<RequestBody>,
-    // TODO: client object
+    /// <https://fetch.spec.whatwg.org/#concept-request-client>
+    pub client: Option<EnvironmentSettingsObject>,
+    /// <https://fetch.spec.whatwg.org/#concept-request-window>
     pub window: Window,
     // TODO: target browsing context
     /// <https://fetch.spec.whatwg.org/#request-keepalive-flag>
@@ -510,6 +742,8 @@ pub struct Request {
     pub https_state: HttpsState,
     /// Servo internal: if crash details are present, trigger a crash error page with these details.
     pub crash: Option<String>,
+    /// <https://fetch.spec.whatwg.org/#done-flag>
+    pub done_flag: Option<bool>,
 }
 
 impl Request {
@@ -527,6 +761,7 @@ impl Request {
             headers: HeaderMap::new(),
             unsafe_request: false,
             body: None,
+            client: None,
             window: Window::Client,
             keep_alive: false,
             service_workers_mode: ServiceWorkersMode::All,
@@ -551,6 +786,7 @@ impl Request {
             csp_list: None,
             https_state,
             crash: None,
+            done_flag: None,
         }
     }
 
@@ -596,6 +832,16 @@ impl Request {
             ResourceTimingType::Navigation
         } else {
             ResourceTimingType::Resource
+        }
+    }
+
+    /// <https://fetch.spec.whatwg.org/#concept-fetch> Step 16.1 & 16.2
+    pub fn append_fetch_record(&mut self) {
+        if let Some(settings) = &self.client {
+            // Step 16.1: Let record be a new fetch record whose request is request and controller
+            // is fetchParams’s controller.
+            // Step 16.2: Append record to request’s client’s fetch group list of fetch records.
+            settings.fetch_group.append(FetchRecord::from(self.clone()));
         }
     }
 }

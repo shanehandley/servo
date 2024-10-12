@@ -190,7 +190,7 @@ impl ResponseMethods for Response {
                 total_bytes: _,
                 content_type,
                 source: _,
-            } = body.extract(global)?;
+            } = body.extract(global, false)?;
 
             r.body_stream.set(Some(&*stream));
 
