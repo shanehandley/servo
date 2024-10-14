@@ -196,6 +196,7 @@ impl HTMLVideoElement {
         let request = RequestBuilder::new(poster_url.clone(), document.global().get_referrer())
             .destination(Destination::Image)
             .credentials_mode(CredentialsMode::Include)
+            .client(document.global().environment_settings_object())
             .use_url_credentials(true)
             .origin(document.origin().immutable().clone())
             .pipeline_id(Some(document.global().pipeline_id()));

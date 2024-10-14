@@ -79,7 +79,7 @@ fn test_fetch_response_is_not_network_error() {
 
 #[test]
 fn test_fetch_on_bad_port_is_network_error() {
-    let url = ServoUrl::parse("http://www.example.org:6667").unwrap();
+    let url = ServoUrl::parse("https://www.example.org:6667").unwrap();
     let origin = Origin::Origin(url.origin());
     let mut request = Request::new(
         url,

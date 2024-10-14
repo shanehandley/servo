@@ -2136,6 +2136,7 @@ impl Document {
         mut request: RequestBuilder,
         fetch_target: IpcSender<FetchResponseMsg>,
     ) {
+        request.client = Some(self.global().environment_settings_object());
         request.csp_list = self.get_csp_list().map(|x| x.clone());
         request.https_state = self.https_state.get();
         let mut loader = self.loader.borrow_mut();

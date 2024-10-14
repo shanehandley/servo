@@ -9,10 +9,11 @@ use content_security_policy::{self as csp, CspList};
 use http::header::{HeaderName, AUTHORIZATION};
 use http::{HeaderMap, Method};
 use ipc_channel::ipc::{self, IpcReceiver, IpcSender};
+use log::warn;
 use malloc_size_of_derive::MallocSizeOf;
 use mime::Mime;
 use serde::{Deserialize, Serialize};
-use servo_url::{ImmutableOrigin, ServoUrl};
+use servo_url::{Host, ImmutableOrigin, ServoUrl};
 
 use crate::response::HttpsState;
 use crate::{ReferrerPolicy, ResourceTimingType};
@@ -24,6 +25,7 @@ pub enum Initiator {
     Download,
     ImageSet,
     Manifest,
+    Prefetch,
     XSLT,
     Prefetch,
     Link,
@@ -40,8 +42,107 @@ pub enum Origin {
 }
 
 impl Origin {
+    /// <https://html.spec.whatwg.org/multipage/#concept-origin-opaque>
     pub fn is_opaque(&self) -> bool {
         matches!(self, Origin::Origin(ImmutableOrigin::Opaque(_)))
+    }
+
+    /// Returns false when the origin is considered "Not Trustworthy", and true when the origin is
+    /// evaluated as "Potentially Trustworthy" according to the spec:
+    ///
+    /// https://w3c.github.io/webappsec-secure-contexts/#potentially-trustworthy-origin
+    pub fn is_potentially_trustworthy(&self) -> bool {
+        // 1: If origin is an opaque origin, return "Not Trustworthy".
+        if self.is_opaque() {
+            return false;
+        }
+
+        // 2: Assert: origin is a tuple origin.
+        assert!(self.is_tuple());
+
+        // 3: If origin’s scheme is either "https" or "wss", return "Potentially Trustworthy".
+        // 6: If origin’s scheme is "file", return "Potentially Trustworthy".
+        if let Some(scheme) = self.scheme() {
+            if matches!(scheme, "https" | "wss" | "file") {
+                return true;
+            }
+        }
+
+        // 4: If origin’s host matches one of the CIDR notations 127.0.0.0/8 or ::1/128 [RFC4632],
+        // return "Potentially Trustworthy".
+        if self.host_is_loopback() {
+            return true;
+        }
+
+        // 5: If the user agent conforms to the name resolution rules in [let-localhost-be-localhost]
+        // and one of the following is true:
+        // 5.1: origin’s host is "localhost" or "localhost."
+        // 5.2: origin’s host ends with ".localhost" or ".localhost."
+        if self.host_is_localhost() {
+            return true;
+        }
+
+        // 7: If origin’s scheme component is one which the user agent considers to be authenticated,
+        // return "Potentially Trustworthy".
+        // Unimplemented: This refers to 'app:'-type schemes, see
+        // https://w3c.github.io/webappsec-secure-contexts/#packaged-applications
+
+        // 8: If origin has been configured as a trustworthy origin, return "Potentially Trustworthy".
+        // Unimplemented: This refers to users configuring specific domains as trustworthy. See
+        // https://w3c.github.io/webappsec-secure-contexts/#development-environments
+
+        // 9: Return "Not Trustworthy".
+        false
+    }
+
+    fn is_client(&self) -> bool {
+        matches!(self, Origin::Client)
+    }
+
+    fn is_tuple(&self) -> bool {
+        match self {
+            Origin::Origin(origin) if origin.is_tuple() => true,
+            _ => false,
+        }
+    }
+
+    fn host(&self) -> Option<&Host> {
+        if self.is_opaque() || self.is_client() {
+            return None;
+        }
+
+        match self {
+            Origin::Origin(origin) if origin.is_tuple() => origin.host(),
+            _ => None,
+        }
+    }
+
+    fn host_is_loopback(&self) -> bool {
+        match self.host() {
+            Some(Host::Ipv4(address)) => address.is_loopback(),
+            Some(Host::Ipv6(address)) => address.is_loopback(),
+            _ => false,
+        }
+    }
+
+    fn host_is_localhost(&self) -> bool {
+        self.host().map_or(false, |host| match host {
+            Host::Domain(domain) => {
+                let stringified_domain = domain.as_str();
+
+                return matches!(stringified_domain, "localhost" | "localhost.") ||
+                    stringified_domain.ends_with(".localhost") ||
+                    stringified_domain.ends_with(".localhost.");
+            },
+            _ => false,
+        })
+    }
+
+    fn scheme(&self) -> Option<&str> {
+        match self {
+            Origin::Origin(origin) if origin.is_tuple() => origin.scheme(),
+            _ => None,
+        }
     }
 }
 
@@ -169,6 +270,33 @@ pub enum BodyChunkRequest {
     Error,
 }
 
+/// Note: This is only a partial implementation of of the environment settings object. There
+/// are additional properties provided directly to the request which are candidates to be
+/// moved into this struct, in addition to other properties which are yet to be implemented.
+///
+/// <https://html.spec.whatwg.org/multipage/#environment-settings-object>
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize)]
+pub struct EnvironmentSettingsObject {
+    /// An origin used in security checks
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-settings-object-origin>
+    pub origin: Origin,
+    /// A URL that represents the location of the resource with which this environment is
+    /// associated.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-creation-url>
+    pub creation_url: Option<ServoUrl>,
+}
+
+impl EnvironmentSettingsObject {
+    pub fn new(origin: Origin, creation_url: Option<ServoUrl>) -> EnvironmentSettingsObject {
+        EnvironmentSettingsObject {
+            origin,
+            creation_url,
+        }
+    }
+}
+
 /// The net component's view into <https://fetch.spec.whatwg.org/#bodies>
 #[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
 pub struct RequestBody {
@@ -236,10 +364,10 @@ pub struct RequestBuilder {
     )]
     #[ignore_malloc_size_of = "Defined in hyper"]
     pub headers: HeaderMap,
+    pub client: Option<EnvironmentSettingsObject>,
     pub unsafe_request: bool,
     pub body: Option<RequestBody>,
     pub service_workers_mode: ServiceWorkersMode,
-    // TODO: client object
     pub destination: Destination,
     pub synchronous: bool,
     pub mode: RequestMode,
@@ -277,6 +405,7 @@ impl RequestBuilder {
             headers: HeaderMap::new(),
             unsafe_request: false,
             body: None,
+            client: None,
             service_workers_mode: ServiceWorkersMode::All,
             destination: Destination::None,
             synchronous: false,
@@ -303,6 +432,11 @@ impl RequestBuilder {
 
     pub fn initiator(mut self, initiator: Initiator) -> RequestBuilder {
         self.initiator = initiator;
+        self
+    }
+
+    pub fn client(mut self, environment: EnvironmentSettingsObject) -> RequestBuilder {
+        self.client = Some(environment);
         self
     }
 
@@ -414,6 +548,7 @@ impl RequestBuilder {
         request.headers = self.headers;
         request.unsafe_request = self.unsafe_request;
         request.body = self.body;
+        request.client = self.client;
         request.service_workers_mode = self.service_workers_mode;
         request.destination = self.destination;
         request.synchronous = self.synchronous;
@@ -457,7 +592,9 @@ pub struct Request {
     pub unsafe_request: bool,
     /// <https://fetch.spec.whatwg.org/#concept-request-body>
     pub body: Option<RequestBody>,
-    // TODO: client object
+    /// <https://fetch.spec.whatwg.org/#concept-request-client>
+    pub client: Option<EnvironmentSettingsObject>,
+    /// <https://fetch.spec.whatwg.org/#concept-request-window>
     pub window: Window,
     // TODO: target browsing context
     /// <https://fetch.spec.whatwg.org/#request-keepalive-flag>
@@ -521,6 +658,7 @@ impl Request {
         https_state: HttpsState,
     ) -> Request {
         Request {
+            client: None,
             method: Method::GET,
             local_urls_only: false,
             sandboxed_storage_area_urls: false,
@@ -597,6 +735,33 @@ impl Request {
         } else {
             ResourceTimingType::Resource
         }
+    }
+
+    /// Returns true when the result evaluates to "Prohibits Mixed Security Contexts" and false
+    /// for "Does Not Prohibit Mixed Security Contexts"
+    ///
+    /// <https://w3c.github.io/webappsec-mixed-content/#categorize-settings-object>
+    pub fn does_settings_prohibit_mixed_security_contexts(&self) -> bool {
+        if self.client.is_none() {
+            warn!("No Client Object: {:?}", self.current_url().clone());
+        }
+
+        self.client.as_ref().map_or(false, |settings| {
+            // 1: If settings’ origin is a potentially trustworthy origin, then return
+            // "Prohibits Mixed Security Contexts".
+            if settings.origin.is_potentially_trustworthy() {
+                return true;
+            }
+
+            // 2: If settings’ global object is a window, then:
+            // 2.1: Set document to settings’ global object's associated Document.
+            // 2.2: For each navigable navigable in document’s ancestor navigables:
+            // 2.2.1: If navigable’s active document's origin is a potentially trustworthy origin,
+            // then return "Prohibits Mixed Security Contexts".
+            // TODO
+
+            false
+        })
     }
 }
 

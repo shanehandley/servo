@@ -114,44 +114,84 @@ pub async fn fetch(request: &mut Request, target: Target<'_>, context: &FetchCon
     fetch_with_cors_cache(request, &mut CorsCache::default(), target, context).await;
 }
 
+/// Steps 9
+///
+/// <https://fetch.spec.whatwg.org/#concept-fetch>
 pub async fn fetch_with_cors_cache(
     request: &mut Request,
     cache: &mut CorsCache,
     target: Target<'_>,
     context: &FetchContext,
 ) {
-    // Step 1.
+    // Step 9: If request’s window is "client", then set request’s window to request’s client,
+    // if request’s client’s global object is a Window object; otherwise "no-window".
     if request.window == Window::Client {
         // TODO: Set window to request's client object if client is a Window object
     } else {
         request.window = Window::NoWindow;
     }
 
-    // Step 2.
+    // Step 10: If request’s origin is "client", then set request’s origin to request’s client’s
+    // origin.
     if request.origin == Origin::Client {
-        // TODO: set request's origin to request's client's origin
-        unimplemented!()
+        if let Some(ref settings_object) = request.client {
+            request.origin = settings_object.origin.clone();
+        }
     }
 
-    // Step 3.
-    set_default_accept(request);
+    // Step 13.
+    set_default_accept(request.initiator, request.destination, &mut request.headers);
 
-    // Step 4.
+    // Step 14.
     set_default_accept_language(&mut request.headers);
 
-    // Step 5.
+    // Step 15: If request’s internal priority is null, then use request’s priority, initiator,
+    // destination, and render-blocking in an implementation-defined manner to set request’s
+    //internal priority to an implementation-defined object.
     // TODO: figure out what a Priority object is.
 
-    // Step 6.
-    // TODO: handle client hints headers.
-
-    // Step 7.
+    // Step 16: If request is a subresource request, then:
     if request.is_subresource_request() {
-        // TODO: handle client hints headers.
+        // TODO: Requires implementation of fetch groups: https://fetch.spec.whatwg.org/#fetch-groups
+
+        // 16.1: Let record be a new fetch record whose request is request and controller is
+        // fetchParams’s controller.
+
+        // 16.2: Append record to request’s client’s fetch group list of fetch records.
     }
 
-    // Step 8.
+    // Step 17, 18: Run main fetch given fetchParams. Return fetchParams’s controller.
     main_fetch(request, cache, false, false, target, &mut None, context).await;
+}
+
+/// <https://w3c.github.io/webappsec-mixed-content/#should-block-fetch>
+pub fn should_request_be_blocked_as_mixed_content(request: &Request) -> bool {
+    // Step 1: Return allowed if one or more of the following conditions are met:
+
+    // 1.1: <Does settings prohibit mixed security contexts?> returns "Does Not Restrict Mixed
+    // Security Contexts" when applied to request’s client.
+    if !request.does_settings_prohibit_mixed_security_contexts() {
+        return false;
+    }
+
+    // 1.2: request’s URL is a potentially trustworthy URL.
+    if request.current_url().is_potentially_trustworthy() {
+        return false;
+    }
+
+    // 1.3: TODO: The user agent has been instructed to allow mixed content, as described in
+    // https://w3c.github.io/webappsec-mixed-content/#requirements-user-controls
+
+    // 1.4: request’s destination is "document", and request’s target browsing context has no parent
+    // browsing context.
+    if request.destination == Destination::Document {
+        return false;
+    }
+
+    warn!("request will be blocked as mixed content");
+
+    // Step 2:  Return blocked.
+    true
 }
 
 /// <https://www.w3.org/TR/CSP/#should-block-request>
@@ -188,7 +228,7 @@ pub async fn main_fetch(
     done_chan: &mut DoneChannel,
     context: &FetchContext,
 ) -> Response {
-    // Step 1.
+    // Step 2: Let response be null.
     let mut response = None;
 
     // Servo internal: return a crash error when a crash error page is needed
@@ -198,54 +238,66 @@ pub async fn main_fetch(
         )));
     }
 
-    // Step 2.
-    if request.local_urls_only &&
-        !matches!(
-            request.current_url().scheme(),
-            "about" | "blob" | "data" | "filesystem"
-        )
-    {
+    // Step 3: If request’s local-URLs-only flag is set and request’s current URL is not local, then
+    // set response to a network error.
+    if request.local_urls_only && !request.current_url().is_local_scheme() {
         response = Some(Response::network_error(NetworkError::Internal(
             "Non-local scheme".into(),
         )));
     }
 
-    // Step 2.2.
+    // Step 4: Run report Content Security Policy violations for request.
     // TODO: Report violations.
-
-    // Step 2.4.
-    if should_request_be_blocked_by_csp(request) == csp::CheckResult::Blocked {
-        warn!("Request blocked by CSP");
-        response = Some(Response::network_error(NetworkError::Internal(
-            "Blocked by Content-Security-Policy".into(),
-        )))
-    }
 
     // Step 3.
     // TODO: handle request abort.
 
-    // Step 4.
-    // TODO: handle upgrade to a potentially secure URL.
+    // Step 5: Upgrade request to a potentially trustworthy URL, if appropriate.
+    // TODO: Request upgrades via HSTS
 
-    // Step 5.
+    // Step 6: Upgrade a mixed content request to a potentially trustworthy URL, if appropriate.
+    // TODO: Request upgrades for mixed-content
+
+    // Step 7: If should request be blocked due to a bad port, should fetching request be blocked as
+    // mixed content, or should request be blocked by Content Security Policy returns blocked,
+    // then set response to a network error.
     if should_be_blocked_due_to_bad_port(&request.current_url()) {
         response = Some(Response::network_error(NetworkError::Internal(
             "Request attempted on bad port".into(),
         )));
     }
-    // TODO: handle blocking as mixed content.
-    // TODO: handle blocking by content security policy.
 
-    // Step 6
-    // TODO: handle request's client's referrer policy.
+    let request_is_blocked_as_mixed_content = should_request_be_blocked_as_mixed_content(request);
 
-    // Step 7.
+    if request_is_blocked_as_mixed_content {
+        response = Some(Response::network_error(
+            NetworkError::BlockedDueToMixedContent,
+        ))
+    }
+
+    let request_is_blocked_by_csp =
+        should_request_be_blocked_by_csp(request) == csp::CheckResult::Blocked;
+
+    if request_is_blocked_by_csp {
+        response = Some(Response::network_error(
+            NetworkError::BlockedByContentSecurityPolicy,
+        ))
+    }
+
+    // Step 8: If request’s referrer policy is the empty string, then set request’s referrer policy
+    // to request’s policy container’s referrer policy.
+
+    // TODO: handle request's client's referrer policy once policy-container is implemented.
+
     request.referrer_policy = request
         .referrer_policy
         .or(Some(ReferrerPolicy::NoReferrerWhenDowngrade));
 
-    // Step 8.
+    // Step 9: If request’s referrer is not "no-referrer", then set request’s referrer to the result
+    // of invoking 'determine request’s referrer'.
+    // https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
     assert!(request.referrer_policy.is_some());
+
     let referrer_url = match mem::replace(&mut request.referrer, Referrer::NoReferrer) {
         Referrer::NoReferrer => None,
         Referrer::ReferrerUrl(referrer_source) | Referrer::Client(referrer_source) => {
@@ -257,12 +309,11 @@ pub async fn main_fetch(
             )
         },
     };
+
     request.referrer = referrer_url.map_or(Referrer::NoReferrer, Referrer::ReferrerUrl);
 
-    // Step 9.
-    // TODO: handle FTP URLs.
-
-    // Step 10.
+    // Step 10: Set request’s current URL’s scheme to "https" if all of the following conditions are
+    // true
     context
         .state
         .hsts_list
@@ -273,11 +324,11 @@ pub async fn main_fetch(
     // Step 11.
     // Not applicable: see fetch_async.
 
-    // Step 12.
-
     let current_url = request.current_url();
     let current_scheme = current_url.scheme();
 
+    // Step 12: If response is null, then set response to the result of running the steps
+    // corresponding to the first matching statement:
     let mut response = match response {
         Some(res) => res,
         None => {
@@ -349,22 +400,26 @@ pub async fn main_fetch(
         },
     };
 
-    // Step 13.
+    // Step 13: If recursive is true, then return response.
     if recursive_flag {
         return response;
     }
 
-    // Step 14.
+    // Step 14: If response is not a network error and response is not a filtered response, then:
     let mut response = if !response.is_network_error() && response.internal_response.is_none() {
-        // Substep 1.
+        // 14.1: If request’s response tainting is "cors", then:
         if request.response_tainting == ResponseTainting::CorsTainting {
-            // Subsubstep 1.
+            // 14.1.1: Let headerNames be the result of extracting header list values given
+            // `Access-Control-Expose-Headers` and response’s header list.
             let header_names: Option<Vec<HeaderName>> = response
                 .headers
                 .typed_get::<AccessControlExposeHeaders>()
                 .map(|v| v.iter().collect());
+
+            // 14.1.2: If request’s credentials mode is not "include" and headerNames contains `*`,
+            // then set response’s CORS-exposed header-name list to all unique header names in
+            // response’s header list.
             match header_names {
-                // Subsubstep 2.
                 Some(ref list)
                     if request.credentials_mode != CredentialsMode::Include &&
                         list.iter().any(|header| header == "*") =>
@@ -375,7 +430,8 @@ pub async fn main_fetch(
                         .map(|(name, _)| name.as_str().to_owned())
                         .collect();
                 },
-                // Subsubstep 3.
+                // 14.1.3: Otherwise, if headerNames is non-null or failure, then set response’s
+                // CORS-exposed header-name list to headerNames.
                 Some(list) => {
                     response.cors_exposed_header_name_list =
                         list.iter().map(|h| h.as_str().to_owned()).collect();
@@ -384,12 +440,14 @@ pub async fn main_fetch(
             }
         }
 
-        // Substep 2.
+        // 14.2: Set response to the following filtered response with response as its internal
+        // response, depending on request’s response tainting:
         let response_type = match request.response_tainting {
             ResponseTainting::Basic => ResponseType::Basic,
             ResponseTainting::CorsTainting => ResponseType::Cors,
             ResponseTainting::Opaque => ResponseType::Opaque,
         };
+
         response.to_filtered(response_type)
     } else {
         response
@@ -397,36 +455,50 @@ pub async fn main_fetch(
 
     let internal_error = {
         // Tests for steps 17 and 18, before step 15 for borrowing concerns.
+
+        // Step 17: If request has a redirect-tainted origin, then set internalResponse’s
+        // has-cross-origin-redirects to true.
         let response_is_network_error = response.is_network_error();
+
         let should_replace_with_nosniff_error = !response_is_network_error &&
             should_be_blocked_due_to_nosniff(request.destination, &response.headers);
+
         let should_replace_with_mime_type_error = !response_is_network_error &&
             should_be_blocked_due_to_mime_type(request.destination, &response.headers);
 
-        // Step 15.
+        let should_replace_with_mixed_content_blocked_error =
+            !response_is_network_error && request_is_blocked_as_mixed_content;
+
         let mut network_error_response = response
             .get_network_error()
             .cloned()
             .map(Response::network_error);
+
+        // Step 15: Let internalResponse be response, if response is a network error; otherwise
+        // response’s internal response.
         let internal_response = if let Some(error_response) = network_error_response.as_mut() {
             error_response
         } else {
             response.actual_response_mut()
         };
 
-        // Step 16.
+        // Step 16: If internalResponse’s URL list is empty, then set it to a clone of request’s URL
+        // list.
         if internal_response.url_list.is_empty() {
             internal_response.url_list.clone_from(&request.url_list)
         }
 
-        // Step 17.
-        // TODO: handle blocking as mixed content.
+        // Step 19: If response is not a network error and any of the following returns blocked:
         // TODO: handle blocking by content security policy.
         let blocked_error_response;
         let internal_response = if should_replace_with_nosniff_error {
             // Defer rebinding result
             blocked_error_response =
                 Response::network_error(NetworkError::Internal("Blocked by nosniff".into()));
+            &blocked_error_response
+        } else if should_replace_with_mixed_content_blocked_error {
+            blocked_error_response =
+                Response::network_error(NetworkError::Internal("Blocked as mixed content".into()));
             &blocked_error_response
         } else if should_replace_with_mime_type_error {
             // Defer rebinding result
