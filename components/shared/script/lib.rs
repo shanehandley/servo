@@ -46,6 +46,7 @@ use malloc_size_of::malloc_size_of_is_0;
 use malloc_size_of_derive::MallocSizeOf;
 use media::WindowGLContext;
 use net_traits::image_cache::ImageCache;
+use net_traits::policy_container::{self, PolicyContainer};
 use net_traits::request::{Referrer, RequestBody};
 use net_traits::storage_thread::StorageType;
 use net_traits::{FetchResponseMsg, ReferrerPolicy, ResourceThreads};
@@ -156,6 +157,8 @@ pub struct LoadData {
     pub referrer: Referrer,
     /// The referrer policy.
     pub referrer_policy: Option<ReferrerPolicy>,
+    /// The policy container
+    pub policy_container: PolicyContainer,
 
     /// The source to use instead of a network response for a srcdoc document.
     pub srcdoc: String,
@@ -196,6 +199,7 @@ impl LoadData {
             js_eval_result: None,
             referrer,
             referrer_policy,
+            policy_container: PolicyContainer::default(),
             srcdoc: "".to_string(),
             inherited_secure_context,
             crash: None,

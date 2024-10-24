@@ -4103,6 +4103,7 @@ impl ScriptThread {
             .use_url_credentials(true)
             .pipeline_id(Some(id))
             .referrer_policy(load_data.referrer_policy)
+            .policy_container(load_data.policy_container)
             .headers(load_data.headers)
             .body(load_data.data)
             .redirect_mode(RedirectMode::Manual)
