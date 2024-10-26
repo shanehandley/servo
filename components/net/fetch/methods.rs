@@ -20,7 +20,7 @@ use log::warn;
 use mime::{self, Mime};
 use net_traits::filemanager_thread::{FileTokenCheck, RelativePos};
 use net_traits::http_status::HttpStatus;
-use net_traits::policy_container::{PolicyContainer, RequestPolicyContainer};
+use net_traits::policy_container::{self, PolicyContainer, RequestPolicyContainer};
 use net_traits::request::{
     is_cors_safelisted_method, is_cors_safelisted_request_header, BodyChunkRequest,
     BodyChunkResponse, CredentialsMode, Destination, Origin, RedirectMode, Referrer, Request,
