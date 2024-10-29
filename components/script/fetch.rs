@@ -192,6 +192,8 @@ pub fn Fetch(
         resource_timing: ResourceFetchTiming::new(timing_type),
     }));
 
+    request_init.referrer_policy = global.referrer_policy().clone();
+
     global.fetch(
         request_init,
         fetch_context,

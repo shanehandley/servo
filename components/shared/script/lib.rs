@@ -713,7 +713,7 @@ pub struct IFrameLoadInfo {
     pub is_private: bool,
     ///  Whether this iframe should be considered secure
     pub inherited_secure_context: Option<bool>,
-    /// Wether this load should replace the current entry (reload). If true, the current
+    /// Whether this load should replace the current entry (reload). If true, the current
     /// entry will be replaced instead of a new entry being added.
     pub replace: HistoryEntryReplacement,
 }
