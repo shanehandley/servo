@@ -6,11 +6,14 @@
 
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, OnceLock};
 use std::thread;
 
 use base::cross_process_instant::CrossProcessInstant;
 use base::id::HistoryStateId;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
+use content_security_policy::CspList;
 use cookie::Cookie;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use headers::{ContentType, HeaderMapExt, ReferrerPolicy as ReferrerPolicyHeader};
@@ -23,11 +26,12 @@ use ipc_channel::Error as IpcError;
 use malloc_size_of::malloc_size_of_is_0;
 use malloc_size_of_derive::MallocSizeOf;
 use mime::Mime;
-use request::RequestId;
+use policy_container::PolicyContainer;
+use request::{Origin, RequestId};
 use rustls::Certificate;
 use serde::{Deserialize, Serialize};
 use servo_rand::RngCore;
-use servo_url::{ImmutableOrigin, ServoUrl};
+use servo_url::{ImmutableOrigin, MutableOrigin, ServoUrl};
 
 use crate::filemanager_thread::FileManagerThreadMsg;
 use crate::http_status::HttpStatus;
@@ -947,3 +951,29 @@ pub fn http_percent_encode(bytes: &[u8]) -> String {
 
 pub static PRIVILEGED_SECRET: LazyLock<u32> =
     LazyLock::new(|| servo_rand::ServoRng::default().next_u32());
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
+/// <https://html.spec.whatwg.org/multipage/#navigation-id>
+pub struct NavigationId(usize);
+
+impl NavigationId {
+    pub fn next() -> Self {
+        static NEXT_REQUEST_ID: AtomicUsize = AtomicUsize::new(0);
+        Self(NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+/// <https://html.spec.whatwg.org/multipage/#navigation-params>
+pub struct NavigationParams {
+    id: Option<NavigationId>,
+    /// <https://html.spec.whatwg.org/multipage/#navigation-params-request>
+    request: Option<Request>,
+    /// <https://html.spec.whatwg.org/multipage/#navigation-params-response>
+    response: Response,
+    /// <https://html.spec.whatwg.org/multipage/#navigation-params-origin>
+    origin: MutableOrigin,
+    /// <https://html.spec.whatwg.org/multipage/#navigation-params-policy-container>
+    policy_container: PolicyContainer,
+    /// <https://html.spec.whatwg.org/multipage/#navigation-params-sandboxing>
+    final_sandboxing_flag_set: SandboxingFlagSet,
+}

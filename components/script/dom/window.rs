@@ -81,12 +81,14 @@ use style::str::HTML_SPACE_CHARACTERS;
 use style::stylesheets::{CssRuleType, Origin, UrlExtraData};
 use style_traits::{CSSPixel, ParsingMode};
 use url::Position;
+use uuid::Uuid;
 use webrender_api::units::{DevicePixel, LayoutPixel};
 use webrender_api::{DocumentId, ExternalScrollId};
 use webrender_traits::CrossProcessCompositorApi;
 
 use super::bindings::codegen::Bindings::MessagePortBinding::StructuredSerializeOptions;
 use super::bindings::trace::HashMapTracedValues;
+use super::document::SourceSnapshotParams;
 use crate::dom::bindings::cell::{DomRefCell, Ref};
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
     DocumentMethods, DocumentReadyState,
@@ -2298,6 +2300,7 @@ impl Window {
     /// Commence a new URL load which will either replace this window or scroll to a fragment.
     ///
     /// <https://html.spec.whatwg.org/multipage/#navigating-across-documents>
+    /// <https://html.spec.whatwg.org/multipage/#navigate>
     pub fn load_url(
         &self,
         history_handling: NavigationHistoryBehavior,
@@ -2305,16 +2308,61 @@ impl Window {
         load_data: LoadData,
         can_gc: CanGc,
     ) {
-        let doc = self.Document();
+        let source_document = self.Document();
 
-        // Step 3. Let initiatorOriginSnapshot be sourceDocument's origin.
-        let initiator_origin_snapshot = &load_data.load_origin;
+        // Step 1: Let cspNavigationType be "form-submission" if formDataEntryList is non-null;
+        // otherwise "other".
+
+        // Step 2: Let sourceSnapshotParams be the result of snapshotting source snapshot params
+        // given sourceDocument.
+        let source_snapshot_params = SourceSnapshotParams::snapshot(&source_document);
+
+        // Step 3: Let initiatorOriginSnapshot be sourceDocument's origin.
+        let initiator_origin_snapshot = source_document.origin();
+
+        // Step 4: Let initiatorBaseURLSnapshot be sourceDocument's document base URL.
+        let initiator_base_url_snapshot = source_document.base_url();
+
+        // Step 5: If sourceDocument's node navigable is not allowed by sandboxing to navigate
+        // navigable given sourceSnapshotParams, then:
+        // TODO: https://html.spec.whatwg.org/multipage/browsing-the-web.html#allowed-to-navigate
+
+        // Step 6: Let navigationId be the result of generating a random UUID.
+        let navigation_id = Uuid::new_v4();
+
+        // Step 8: If navigable's active document's unload counter is greater than 0, then invoke
+        // WebDriver BiDi navigation failed with a WebDriver BiDi navigation status whose id is
+        // navigationId, status is "canceled", and url is url, and return.
+        // TODO
+
+        let mut history_handling = history_handling.clone();
+
+        // Step 11: If historyHandling is "auto", then:
+        if history_handling == NavigationHistoryBehavior::Auto {
+            // Step 11.1: If url equals navigable's active document's URL, and
+            // initiatorOriginSnapshot is same origin with targetNavigable's active document's
+            // origin, then set historyHandling to "replace".
+            // TODO: `targetNavigable` is not actually defined in the spec here?
+        }
+
+        // Step 12: If the navigation must be a replace given url and navigable's active document,
+        // then set historyHandling to "replace".
+        // TODO: initial about blank on Document
+        if load_data.url.scheme() == "javascript" || source_document.url().as_str() == "about:blank"
+        {
+            history_handling = NavigationHistoryBehavior::Replace;
+        }
+
+        // Step 13: If all of the following are true...
+
+        // Step 14. If navigable's parent is non-null, then set navigable's is delaying load events
+        // to true.
 
         // TODO: Important re security. See https://github.com/servo/servo/issues/23373
         // Step 5. check that the source browsing-context is "allowed to navigate" this window.
         if !force_reload &&
             load_data.url.as_url()[..Position::AfterQuery] ==
-                doc.url().as_url()[..Position::AfterQuery]
+                source_document.url().as_url()[..Position::AfterQuery]
         {
             // Step 6
             // TODO: Fragment handling appears to have moved to step 13
@@ -2323,9 +2371,11 @@ impl Window {
                     load_data.url.clone(),
                     history_handling,
                 ));
-                doc.check_and_scroll_fragment(fragment, can_gc);
+
+                source_document.check_and_scroll_fragment(fragment, can_gc);
+
                 let this = Trusted::new(self);
-                let old_url = doc.url().into_string();
+                let old_url = source_document.url().into_string();
                 let new_url = load_data.url.clone().into_string();
                 let task = task!(hashchange_event: move || {
                     let this = this.root();
@@ -2339,10 +2389,13 @@ impl Window {
                         CanGc::note());
                     event.upcast::<Event>().fire(this.upcast::<EventTarget>(), CanGc::note());
                 });
+
                 self.task_manager()
                     .dom_manipulation_task_source()
                     .queue(task);
-                doc.set_url(load_data.url.clone());
+                
+                source_document.set_url(load_data.url.clone());
+
                 return;
             }
         }
@@ -2352,13 +2405,13 @@ impl Window {
         // Step 4 and 5
         let window_proxy = self.window_proxy();
         if let Some(active) = window_proxy.currently_active() {
-            if pipeline_id == active && doc.is_prompting_or_unloading() {
+            if pipeline_id == active && source_document.is_prompting_or_unloading() {
                 return;
             }
         }
 
         // Step 8
-        if doc.prompt_to_unload(false, can_gc) {
+        if source_document.prompt_to_unload(false, can_gc) {
             let window_proxy = self.window_proxy();
             if window_proxy.parent().is_some() {
                 // Step 10

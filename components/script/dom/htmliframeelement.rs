@@ -152,7 +152,7 @@ impl HTMLIFrameElement {
 
         {
             let load_blocker = &self.load_blocker;
-            // Any oustanding load is finished from the point of view of the blocked
+            // Any outstanding load is finished from the point of view of the blocked
             // document; the new navigation will continue blocking it.
             LoadBlocker::terminate(load_blocker, can_gc);
         }
