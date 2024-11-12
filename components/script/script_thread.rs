@@ -69,8 +69,8 @@ use net_traits::request::{
 };
 use net_traits::storage_thread::StorageType;
 use net_traits::{
-    FetchMetadata, FetchResponseListener, FetchResponseMsg, Metadata, NetworkError,
-    ResourceFetchTiming, ResourceThreads, ResourceTimingType,
+    FetchMetadata, FetchResponseListener, FetchResponseMsg, Metadata,
+    NetworkError, ResourceFetchTiming, ResourceThreads, ResourceTimingType,
 };
 use percent_encoding::percent_decode;
 use profile_traits::mem::{self as profile_mem, OpaqueSender, ReportsChan};
@@ -910,7 +910,7 @@ impl ScriptThread {
         }
     }
 
-    /// Step 13 of <https://html.spec.whatwg.org/multipage/#navigate>
+    /// Step 20 of <https://html.spec.whatwg.org/multipage/#navigate>
     pub fn navigate(
         browsing_context: BrowsingContextId,
         pipeline_id: PipelineId,
@@ -918,9 +918,12 @@ impl ScriptThread {
         history_handling: NavigationHistoryBehavior,
     ) {
         with_script_thread(|script_thread| {
+            // Step 20: If url's scheme is "javascript", then:
             let is_javascript = load_data.url.scheme() == "javascript";
-            // If resource is a request whose url's scheme is "javascript"
-            // https://html.spec.whatwg.org/multipage/#javascript-protocol
+
+            // Step 20.1: Queue a global task on the navigation and traversal task source given
+            // navigable's active window to navigate to a javascript: URL given navigable, url,
+            // historyHandling, initiatorOriginSnapshot, and cspNavigationType.
             if is_javascript {
                 let window = match script_thread.documents.borrow().find_window(pipeline_id) {
                     None => return,
