@@ -840,6 +840,8 @@ pub struct Metadata {
     pub timing: Option<ResourceFetchTiming>,
     /// True if the request comes from a redirection
     pub redirected: bool,
+
+    pub sandboxing_flag_state: Vec<String>,
 }
 
 impl Metadata {
@@ -857,6 +859,7 @@ impl Metadata {
             referrer_policy: ReferrerPolicy::EmptyString,
             timing: None,
             redirected: false,
+            sandboxing_flag_state: vec![],
         }
     }
 
@@ -894,6 +897,10 @@ impl Metadata {
             .as_mut()
             .unwrap()
             .typed_insert::<ReferrerPolicyHeader>(referrer_policy.into());
+    }
+
+    pub fn set_sandboxing_flag_state(&mut self, state: Vec<String>) {
+        self.sandboxing_flag_state = state;
     }
 }
 

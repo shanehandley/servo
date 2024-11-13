@@ -6,6 +6,9 @@ use std::cell::Cell;
 
 use base::id::{BrowsingContextId, PipelineId, WebViewId};
 use bitflags::bitflags;
+use content_security_policy::sandboxing_directive::{
+    parse_a_sandboxing_directive, SandboxingFlagSet,
+};
 use dom_struct::dom_struct;
 use embedder_traits::ViewportDetails;
 use html5ever::{LocalName, Prefix, local_name, namespace_url, ns};
@@ -44,21 +47,6 @@ use crate::dom::windowproxy::WindowProxy;
 use crate::script_runtime::CanGc;
 use crate::script_thread::ScriptThread;
 
-#[derive(Clone, Copy, JSTraceable, MallocSizeOf)]
-struct SandboxAllowance(u8);
-
-bitflags! {
-    impl SandboxAllowance: u8 {
-        const ALLOW_NOTHING = 0x00;
-        const ALLOW_SAME_ORIGIN = 0x01;
-        const ALLOW_TOP_NAVIGATION = 0x02;
-        const ALLOW_FORMS = 0x04;
-        const ALLOW_SCRIPTS = 0x08;
-        const ALLOW_POINTER_LOCK = 0x10;
-        const ALLOW_POPUPS = 0x20;
-    }
-}
-
 #[derive(PartialEq)]
 enum PipelineType {
     InitialAboutBlank,
@@ -85,14 +73,17 @@ pub(crate) struct HTMLIFrameElement {
     #[no_trace]
     about_blank_pipeline_id: Cell<Option<PipelineId>>,
     sandbox: MutNullableDom<DOMTokenList>,
-    sandbox_allowance: Cell<Option<SandboxAllowance>>,
     load_blocker: DomRefCell<Option<LoadBlocker>>,
     throttled: Cell<bool>,
+    #[no_trace]
+    #[ignore_malloc_size_of = "type from external crate"]
+    /// <https://html.spec.whatwg.org/multipage/#iframe-sandboxing-flag-set>
+    sandboxing_flag_set: Cell<SandboxingFlagSet>,
 }
 
 impl HTMLIFrameElement {
-    pub(crate) fn is_sandboxed(&self) -> bool {
-        self.sandbox_allowance.get().is_some()
+    pub fn is_sandboxed(&self) -> bool {
+        !self.sandboxing_flag_set.get().is_empty()
     }
 
     /// <https://html.spec.whatwg.org/multipage/#otherwise-steps-for-iframe-or-frame-elements>,
@@ -110,6 +101,19 @@ impl HTMLIFrameElement {
                 }
             })
             .unwrap_or_else(|| ServoUrl::parse("about:blank").unwrap())
+    }
+
+    fn get_sandboxing_flag_state(&self) -> Vec<String> {
+        self
+            .upcast::<Element>()
+            .get_attribute(&ns!(), &local_name!("sandbox"))
+            .map(|attr| {
+                attr.value()
+                    .as_tokens()
+                    .iter()
+                    .map(|t| String::from(&*t.to_ascii_lowercase()))
+                    .collect::<Vec<String>>()
+            }).unwrap_or(vec![])
     }
 
     pub(crate) fn navigate_or_reload_child_browsing_context(
@@ -271,6 +275,7 @@ impl HTMLIFrameElement {
                 document.get_referrer_policy(),
                 Some(window.as_global_scope().is_secure_context()),
                 Some(document.insecure_requests_policy()),
+                self.get_sandboxing_flag_state()
             );
             let element = self.upcast::<Element>();
             load_data.srcdoc = String::from(element.get_string_attribute(&local_name!("srcdoc")));
@@ -362,6 +367,7 @@ impl HTMLIFrameElement {
             referrer_policy,
             Some(window.as_global_scope().is_secure_context()),
             Some(document.insecure_requests_policy()),
+            self.get_sandboxing_flag_state()
         );
 
         let pipeline_id = self.pipeline_id();
@@ -377,6 +383,30 @@ impl HTMLIFrameElement {
         };
 
         self.navigate_or_reload_child_browsing_context(load_data, history_handling, can_gc);
+    }
+
+    fn parse_the_sandbox_directive(&self) {
+        warn!("======== parse_the_sandbox_directive");
+
+        if let Some(sandboxing_flags) = self
+            .upcast::<Element>()
+            .get_attribute(&ns!(), &local_name!("sandbox"))
+            .map(|attr| {
+                attr.value()
+                    .as_tokens()
+                    .iter()
+                    .map(|t| String::from(&*t.to_ascii_lowercase()))
+                    .collect::<Vec<String>>()
+            })
+        {
+            self.sandboxing_flag_set
+                .set(parse_a_sandboxing_directive(&sandboxing_flags));
+
+                warn!("======== found: {:?}", self.sandboxing_flag_set.get().clone());
+
+        } else {
+            self.sandboxing_flag_set.set(SandboxingFlagSet::all());
+        }
     }
 
     fn create_nested_browsing_context(&self, can_gc: CanGc) {
@@ -407,6 +437,7 @@ impl HTMLIFrameElement {
             document.get_referrer_policy(),
             Some(window.as_global_scope().is_secure_context()),
             Some(document.insecure_requests_policy()),
+            self.get_sandboxing_flag_state()
         );
         let browsing_context_id = BrowsingContextId::new();
         let webview_id = window.window_proxy().webview_id();
@@ -467,9 +498,9 @@ impl HTMLIFrameElement {
             pending_pipeline_id: Cell::new(None),
             about_blank_pipeline_id: Cell::new(None),
             sandbox: Default::default(),
-            sandbox_allowance: Cell::new(None),
             load_blocker: DomRefCell::new(None),
             throttled: Cell::new(false),
+            sandboxing_flag_set: Cell::new(SandboxingFlagSet::empty()),
         }
     }
 
@@ -585,19 +616,26 @@ impl HTMLIFrameElementMethods<crate::DomTypeHolder> for HTMLIFrameElement {
     // https://html.spec.whatwg.org/multipage/#dom-iframe-srcdoc
     make_setter!(SetSrcdoc, "srcdoc");
 
-    // https://html.spec.whatwg.org/multipage/#dom-iframe-sandbox
+    /// <https://html.spec.whatwg.org/multipage/#dom-iframe-sandbox>
     fn Sandbox(&self) -> DomRoot<DOMTokenList> {
         self.sandbox.or_init(|| {
             DOMTokenList::new(
                 self.upcast::<Element>(),
                 &local_name!("sandbox"),
                 Some(vec![
-                    Atom::from("allow-same-origin"),
+                    Atom::from("allow-downloads"),
                     Atom::from("allow-forms"),
+                    Atom::from("allow-modals"),
+                    Atom::from("allow-orientation-lock"),
                     Atom::from("allow-pointer-lock"),
                     Atom::from("allow-popups"),
+                    Atom::from("allow-popups-to-escape-sandbox"),
+                    Atom::from("allow-presentation"),
+                    Atom::from("allow-same-origin"),
                     Atom::from("allow-scripts"),
                     Atom::from("allow-top-navigation"),
+                    Atom::from("allow-top-navigation-by-user-activation"),
+                    Atom::from("allow-top-navigation-to-custom-protocols"),
                 ]),
                 CanGc::note(),
             )
@@ -684,22 +722,16 @@ impl VirtualMethods for HTMLIFrameElement {
             .attribute_mutated(attr, mutation, can_gc);
         match *attr.local_name() {
             local_name!("sandbox") => {
-                self.sandbox_allowance
-                    .set(mutation.new_value(attr).map(|value| {
-                        let mut modes = SandboxAllowance::ALLOW_NOTHING;
-                        for token in value.as_tokens() {
-                            modes |= match &*token.to_ascii_lowercase() {
-                                "allow-same-origin" => SandboxAllowance::ALLOW_SAME_ORIGIN,
-                                "allow-forms" => SandboxAllowance::ALLOW_FORMS,
-                                "allow-pointer-lock" => SandboxAllowance::ALLOW_POINTER_LOCK,
-                                "allow-popups" => SandboxAllowance::ALLOW_POPUPS,
-                                "allow-scripts" => SandboxAllowance::ALLOW_SCRIPTS,
-                                "allow-top-navigation" => SandboxAllowance::ALLOW_TOP_NAVIGATION,
-                                _ => SandboxAllowance::ALLOW_NOTHING,
-                            };
-                        }
-                        modes
-                    }));
+                if let Some(tokens) = mutation.new_value(attr).map(|value| {
+                    value
+                        .as_tokens()
+                        .iter()
+                        .map(|t| String::from(&*t.to_ascii_lowercase()))
+                        .collect::<Vec<String>>()
+                }) {
+                    self.sandboxing_flag_set
+                        .set(parse_a_sandboxing_directive(&tokens));
+                }
             },
             local_name!("srcdoc") => {
                 // https://html.spec.whatwg.org/multipage/#the-iframe-element:the-iframe-element-9
@@ -761,6 +793,7 @@ impl VirtualMethods for HTMLIFrameElement {
         if self.upcast::<Node>().is_connected_with_browsing_context() {
             debug!("iframe bound to browsing context.");
             self.create_nested_browsing_context(CanGc::note());
+            self.parse_the_sandbox_directive();
             self.process_the_iframe_attributes(ProcessingMode::FirstTime, CanGc::note());
         }
     }
