@@ -6,6 +6,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use dom_struct::dom_struct;
 use html5ever::{LocalName, Prefix};
 use js::rust::HandleObject;
@@ -202,8 +203,15 @@ impl HTMLMetaElement {
                 return;
             }
         }
+
         // 12-13
         if document.completely_loaded() {
+            if document.has_active_sandboxing_flag(
+                SandboxingFlagSet::SANDBOXED_AUTOMATIC_FEATURES_BROWSING_CONTEXT_FLAG,
+            ) {
+                return;
+            }
+
             // TODO: handle active sandboxing flag
             let window = self.owner_window();
             window.as_global_scope().schedule_callback(

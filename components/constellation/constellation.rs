@@ -1329,6 +1329,7 @@ where
                     ReferrerPolicy::EmptyString,
                     None,
                     None,
+                    vec![]
                 );
                 let ctx_id = BrowsingContextId::from(webview_id);
                 let pipeline_id = match self.browsing_contexts.get(&ctx_id) {
@@ -3046,6 +3047,7 @@ where
             ReferrerPolicy::EmptyString,
             None,
             None,
+            vec![]
         );
         let sandbox = IFrameSandboxState::IFrameUnsandboxed;
         let is_private = false;
@@ -4464,6 +4466,7 @@ where
                     ReferrerPolicy::EmptyString,
                     None,
                     None,
+                    vec![]
                 );
                 self.load_url_for_webdriver(
                     webview_id,

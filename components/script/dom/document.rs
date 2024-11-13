@@ -21,6 +21,7 @@ use canvas_traits::canvas::CanvasId;
 use canvas_traits::webgl::{self, WebGLContextId, WebGLMsg};
 use chrono::Local;
 use constellation_traits::{AnimationTickType, CompositorHitTestResult};
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{self as csp, CspList, PolicyDisposition};
 use cookie::Cookie;
 use cssparser::match_ignore_ascii_case;
@@ -541,6 +542,10 @@ pub(crate) struct Document {
     /// The active keyboard modifiers for the WebView. This is updated when receiving any input event.
     #[no_trace]
     active_keyboard_modifiers: Cell<Modifiers>,
+    #[no_trace]
+    #[ignore_malloc_size_of = "type from external crate"]
+    /// <https://html.spec.whatwg.org/multipage/#active-sandboxing-flag-set>,
+    active_sandboxing_flag_set: Cell<SandboxingFlagSet>,
 }
 
 #[allow(non_snake_case)]
@@ -1091,8 +1096,15 @@ impl Document {
     }
 
     /// Return whether scripting is enabled or not
-    pub(crate) fn is_scripting_enabled(&self) -> bool {
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-script>
+    pub fn is_scripting_enabled(&self) -> bool {
         self.scripting_enabled
+
+        // self.scripting_enabled &&
+        //     !self.has_active_sandboxing_flag(
+        //         SandboxingFlagSet::SANDBOXED_SCRIPTS_BROWSING_CONTEXT_FLAG,
+        //     )
     }
 
     /// Return the element that currently has focus.
@@ -3731,6 +3743,7 @@ impl Document {
         doc_loader: DocumentLoader,
         referrer: Option<String>,
         status_code: Option<u16>,
+        active_sandboxing_flag_set: Option<SandboxingFlagSet>,
         canceller: FetchCanceller,
         is_initial_about_blank: bool,
         allow_declarative_shadow_roots: bool,
@@ -3898,6 +3911,8 @@ impl Document {
             intersection_observer_task_queued: Cell::new(false),
             intersection_observers: Default::default(),
             active_keyboard_modifiers: Cell::new(Modifiers::empty()),
+            active_sandboxing_flag_set: Cell::new(active_sandboxing_flag_set
+                .unwrap_or(SandboxingFlagSet::all())),
         }
     }
 
@@ -3936,6 +3951,26 @@ impl Document {
                 .get()
                 .contains(Modifiers::CONTROL)
         }
+    }
+
+    /// Returns a clone of this document's sandboxing flags.
+    ///
+    /// Useful for determining the sandbox flags of a child document.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#determining-the-creation-sandboxing-flags>
+    pub fn active_sandboxing_flag_set(&self) -> SandboxingFlagSet {
+        self.active_sandboxing_flag_set.get().clone()
+    }
+
+    pub fn set_active_sandboxing_flag_set(&self, flags: SandboxingFlagSet) {
+        self.active_sandboxing_flag_set.set(flags)
+    }
+
+    /// Used for determining the state of sandbox flags
+    ///
+    /// When a flag is set, it will no longer exist in this set
+    pub fn has_active_sandboxing_flag(&self, flag: SandboxingFlagSet) -> bool {
+        !self.active_sandboxing_flag_set.get().contains(flag)
     }
 
     /// Note a pending compositor event, to be processed at the next `update_the_rendering` task.
@@ -4052,6 +4087,7 @@ impl Document {
         is_initial_about_blank: bool,
         allow_declarative_shadow_roots: bool,
         inherited_insecure_requests_policy: Option<InsecureRequestsPolicy>,
+        active_sandboxing_flag_set: Option<SandboxingFlagSet>,
         can_gc: CanGc,
     ) -> DomRoot<Document> {
         Self::new_with_proto(
@@ -4072,6 +4108,7 @@ impl Document {
             is_initial_about_blank,
             allow_declarative_shadow_roots,
             inherited_insecure_requests_policy,
+            active_sandboxing_flag_set,
             can_gc,
         )
     }
@@ -4095,6 +4132,7 @@ impl Document {
         is_initial_about_blank: bool,
         allow_declarative_shadow_roots: bool,
         inherited_insecure_requests_policy: Option<InsecureRequestsPolicy>,
+        active_sandboxing_flag_set: Option<SandboxingFlagSet>,
         can_gc: CanGc,
     ) -> DomRoot<Document> {
         let document = reflect_dom_object_with_proto(
@@ -4111,6 +4149,7 @@ impl Document {
                 doc_loader,
                 referrer,
                 status_code,
+                active_sandboxing_flag_set,
                 canceller,
                 is_initial_about_blank,
                 allow_declarative_shadow_roots,
@@ -4248,6 +4287,7 @@ impl Document {
                     false,
                     self.allow_declarative_shadow_roots(),
                     Some(self.insecure_requests_policy()),
+                    Some(self.active_sandboxing_flag_set()),
                     can_gc,
                 );
                 new_doc
@@ -4825,6 +4865,7 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
             false,
             doc.allow_declarative_shadow_roots(),
             Some(doc.insecure_requests_policy()),
+            Some(doc.active_sandboxing_flag_set()),
             can_gc,
         ))
     }
@@ -4892,16 +4933,24 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
         }
     }
 
-    // https://html.spec.whatwg.org/multipage/#dom-document-domain
+    /// <https://html.spec.whatwg.org/multipage/#dom-document-domain>
     fn SetDomain(&self, value: DOMString) -> ErrorResult {
-        // Step 1.
+        warn!("SetDomain");
+
+        // Step 1. If this's browsing context is null, then throw a "SecurityError" DOMException.
         if !self.has_browsing_context {
             return Err(Error::Security);
         }
 
-        // TODO: Step 2. "If this Document object's active sandboxing
-        // flag set has its sandboxed document.domain browsing context
-        // flag set, then throw a "SecurityError" DOMException."
+        // Step 2. If this's active sandboxing flag set has its sandboxed document.domain browsing
+        // context flag set, then throw a "SecurityError" DOMException.
+        if self.has_active_sandboxing_flag(
+            SandboxingFlagSet::SANDBOXED_DOCUMENT_DOMAIN_BROWSING_CONTEXT_FLAG,
+        ) {
+            warn!("SetDomain Blocked by sandboxing flags");
+
+            return Err(Error::Security);
+        }
 
         // Steps 3-4.
         let effective_domain = match self.origin.effective_domain() {
@@ -4915,7 +4964,10 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
             Some(host) => host,
         };
 
-        // Step 6
+        // Step 6. If the surrounding agent's agent cluster's is origin-keyed is true, then return.
+        // TODO
+
+        // Step 7. Set this's origin's domain to the result of parsing the given value.
         self.origin.set_domain(host);
 
         Ok(())
@@ -5919,25 +5971,31 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
         _unused2: Option<DOMString>,
         can_gc: CanGc,
     ) -> Fallible<DomRoot<Document>> {
-        // Step 1
+        // Step 1. If document is an XML document, then throw an "InvalidStateError" DOMException
+        // exception.
         if !self.is_html_document() {
             return Err(Error::InvalidState);
         }
 
-        // Step 2
+        // Step 2. If document's throw-on-dynamic-markup-insertion counter is greater than 0, then
+        // throw an "InvalidStateError" DOMException.
         if self.throw_on_dynamic_markup_insertion_counter.get() > 0 {
             return Err(Error::InvalidState);
         }
 
-        // Step 3
+        // Step 3. Let entryDocument be the entry global object's associated Document.
         let entry_responsible_document = GlobalScope::entry().as_window().Document();
 
-        // Step 4
+        // Step 4. If document's origin is not same origin to entryDocument's origin, then throw a
+        // "SecurityError" DOMException.
         if !self.origin.same_origin(&entry_responsible_document.origin) {
+            warn!("SecurityError: Dis-similar origins");
+
             return Err(Error::Security);
         }
 
-        // Step 5
+        // Step 5. If document has an active parser whose script nesting level is greater than 0,
+        // then return document.
         if self
             .get_current_parser()
             .is_some_and(|parser| parser.is_active())
@@ -5945,7 +6003,8 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
             return Ok(DomRoot::from_ref(self));
         }
 
-        // Step 6
+
+        // Step 6. Similarly, if document's unload counter is greater than 0, then return document.
         if self.is_prompting_or_unloading() {
             return Ok(DomRoot::from_ref(self));
         }

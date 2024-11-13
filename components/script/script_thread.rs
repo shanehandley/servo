@@ -3193,6 +3193,7 @@ impl ScriptThread {
             is_initial_about_blank,
             true,
             incomplete.load_data.inherited_insecure_requests_policy,
+            None,
             can_gc,
         );
 
@@ -3526,6 +3527,7 @@ impl ScriptThread {
         let mut meta = Metadata::default(url);
         meta.set_content_type(Some(&mime::TEXT_HTML));
         meta.set_referrer_policy(incomplete.load_data.referrer_policy);
+        meta.set_sandboxing_flag_state(incomplete.load_data.sandboxing_flag_state.clone());
 
         // If this page load is the result of a javascript scheme url, map
         // the evaluation result into a response.
@@ -3557,6 +3559,7 @@ impl ScriptThread {
         let mut meta = Metadata::default(url.clone());
         meta.set_content_type(Some(&mime::TEXT_HTML));
         meta.set_referrer_policy(incomplete.load_data.referrer_policy);
+        meta.set_sandboxing_flag_state(incomplete.load_data.sandboxing_flag_state.clone());
 
         let srcdoc = std::mem::take(&mut incomplete.load_data.srcdoc);
         let chunk = srcdoc.into_bytes();
