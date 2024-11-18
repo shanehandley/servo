@@ -2194,10 +2194,13 @@ impl Document {
         request: RequestBuilder,
         listener: Listener,
     ) {
+        let request = self.prepare_request(request);
+
         let (task_source, canceller) = self
             .window()
             .task_manager()
             .networking_task_source_with_canceller();
+
         let callback = NetworkListener {
             context: std::sync::Arc::new(Mutex::new(listener)),
             task_source,
@@ -3851,7 +3854,6 @@ impl Document {
         self.referrer_policy.set(policy);
     }
 
-    //TODO - default still at no-referrer
     pub fn get_referrer_policy(&self) -> Option<ReferrerPolicy> {
         self.referrer_policy.get()
     }
@@ -5344,28 +5346,29 @@ impl DocumentMethods for Document {
         _unused2: Option<DOMString>,
         can_gc: CanGc,
     ) -> Fallible<DomRoot<Document>> {
-        // Step 1
+        // Step 1: If document is an XML document, then throw an "InvalidStateError" DOMException
+        // exception.
         if !self.is_html_document() {
             return Err(Error::InvalidState);
         }
 
-        // Step 2
+        // Step 2: If document's throw-on-dynamic-markup-insertion counter is greater than 0, then
+        // throw an "InvalidStateError" DOMException.
         if self.throw_on_dynamic_markup_insertion_counter.get() > 0 {
             return Err(Error::InvalidState);
         }
 
-        // Step 3
+        // Step 3: Let entryDocument be the entry global object's associated Document.
         let entry_responsible_document = GlobalScope::entry().as_window().Document();
 
-        // Step 4
-        // This check is same-origin not same-origin-domain.
-        // https://github.com/whatwg/html/issues/2282
-        // https://github.com/whatwg/html/pull/2288
+        // Step 4: If document's origin is not same origin to entryDocument's origin, then throw a
+        // "SecurityError" DOMException.
         if !self.origin.same_origin(&entry_responsible_document.origin) {
             return Err(Error::Security);
         }
 
-        // Step 5
+        // Step 5: If document has an active parser whose script nesting level is greater than 0,
+        // then return document.
         if self
             .get_current_parser()
             .is_some_and(|parser| parser.is_active())
@@ -5373,12 +5376,12 @@ impl DocumentMethods for Document {
             return Ok(DomRoot::from_ref(self));
         }
 
-        // Step 6
+        // Step 6: Similarly, if document's unload counter is greater than 0, then return document.
         if self.is_prompting_or_unloading() {
             return Ok(DomRoot::from_ref(self));
         }
 
-        // Step 7
+        // Step 7: If document's active parser was aborted is true, then return document.
         if self.active_parser_was_aborted.get() {
             return Ok(DomRoot::from_ref(self));
         }
@@ -5388,7 +5391,8 @@ impl DocumentMethods for Document {
 
         window_from_node(self).set_navigation_start();
 
-        // Step 8
+        // Step 8: If document's node navigable is non-null and document's node navigable's ongoing
+        // navigation is a navigation ID, then stop loading document's node navigable.
         // TODO: https://github.com/servo/servo/issues/21937
         if self.has_browsing_context() {
             // spec says "stop document loading",
