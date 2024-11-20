@@ -313,7 +313,7 @@ pub fn determine_requests_referrer(
     current_url: ServoUrl,
 ) -> Option<ServoUrl> {
     match referrer_policy {
-        ReferrerPolicy::EmptyString | ReferrerPolicy::NoReferrer => None,
+        ReferrerPolicy::NoReferrer => None,
         ReferrerPolicy::Origin => strip_url_for_use_as_referrer(referrer_source, true),
         ReferrerPolicy::UnsafeUrl => strip_url_for_use_as_referrer(referrer_source, false),
         ReferrerPolicy::StrictOrigin => strict_origin(referrer_source, current_url),
@@ -327,6 +327,9 @@ pub fn determine_requests_referrer(
         ReferrerPolicy::NoReferrerWhenDowngrade => {
             no_referrer_when_downgrade(referrer_source, current_url)
         },
+        ReferrerPolicy::EmptyString => {
+            panic!("determine_requests_referrer should not be called with the empty string");
+        }
     }
 }
 
