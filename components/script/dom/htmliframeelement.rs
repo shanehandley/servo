@@ -9,6 +9,7 @@ use bitflags::bitflags;
 use dom_struct::dom_struct;
 use html5ever::{local_name, namespace_url, ns, LocalName, Prefix};
 use js::rust::HandleObject;
+use net_traits::ReferrerPolicy;
 use profile_traits::ipc as ProfiledIpc;
 use script_traits::IFrameSandboxState::{IFrameSandboxed, IFrameUnsandboxed};
 use script_traits::{
@@ -29,9 +30,11 @@ use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::bindings::reflector::DomObject;
 use crate::dom::bindings::root::{DomRoot, LayoutDom, MutNullableDom};
 use crate::dom::bindings::str::{DOMString, USVString};
-use crate::dom::document::Document;
+use crate::dom::document::{determine_policy_for_token, Document};
 use crate::dom::domtokenlist::DOMTokenList;
-use crate::dom::element::{AttributeMutation, Element, LayoutElementHelpers};
+use crate::dom::element::{
+    reflect_referrer_policy_attribute, AttributeMutation, Element, LayoutElementHelpers,
+};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::htmlelement::HTMLElement;
@@ -147,7 +150,7 @@ impl HTMLIFrameElement {
 
         {
             let load_blocker = &self.load_blocker;
-            // Any oustanding load is finished from the point of view of the blocked
+            // Any outstanding load is finished from the point of view of the blocked
             // document; the new navigation will continue blocking it.
             LoadBlocker::terminate(load_blocker, can_gc);
         }
@@ -259,7 +262,7 @@ impl HTMLIFrameElement {
                 url,
                 pipeline_id,
                 window.upcast::<GlobalScope>().get_referrer(),
-                document.get_referrer_policy(),
+                ReferrerPolicy::EmptyString,
                 Some(window.upcast::<GlobalScope>().is_secure_context()),
             );
             let element = self.upcast::<Element>();
@@ -300,6 +303,13 @@ impl HTMLIFrameElement {
         // >    `element`.
         let url = self.get_url();
 
+        // Step 2.3: If url matches about:blank and initialInsertion is true, then:
+        // TODO
+
+        // Step 2.4: Let referrerPolicy be the current state of element's referrerpolicy content
+        // attribute.
+        let referrer_policy = self.ReferrerPolicy();
+
         // TODO(#25748):
         // By spec, we return early if there's an ancestor browsing context
         // "whose active document's url, ignoring fragments, is equal".
@@ -337,7 +347,7 @@ impl HTMLIFrameElement {
             url,
             creator_pipeline_id,
             window.upcast::<GlobalScope>().get_referrer(),
-            document.get_referrer_policy(),
+            determine_policy_for_token(referrer_policy.str()),
             Some(window.upcast::<GlobalScope>().is_secure_context()),
         );
 
@@ -500,17 +510,18 @@ impl HTMLIFrameElement {
         // TODO A cross-origin child document would not be easily accessible
         //      from this script thread. It's unclear how to implement
         //      steps 2, 3, and 5 efficiently in this case.
-        // TODO Step 2 - check child document `mute iframe load` flag
-        // TODO Step 3 - set child document  `mut iframe load` flag
 
-        // Step 4
+        // TODO Step 3 - check child document `mute iframe load` flag
+        // TODO Step 5 - set child document  `mut iframe load` flag
+
+        // Step 6: Fire an event named load at element.
         self.upcast::<EventTarget>()
             .fire_event(atom!("load"), can_gc);
 
         let blocker = &self.load_blocker;
         LoadBlocker::terminate(blocker, can_gc);
 
-        // TODO Step 5 - unset child document `mut iframe load` flag
+        // TODO Step 7 - unset child document `mut iframe load` flag
     }
 }
 
@@ -609,6 +620,14 @@ impl HTMLIFrameElementMethods<crate::DomTypeHolder> for HTMLIFrameElement {
         // Step 5.
         Some(document)
     }
+
+    // https://html.spec.whatwg.org/multipage/#attr-iframe-referrerpolicy
+    fn ReferrerPolicy(&self) -> DOMString {
+        reflect_referrer_policy_attribute(self.upcast::<Element>())
+    }
+
+    // https://html.spec.whatwg.org/multipage/#attr-iframe-referrerpolicy
+    make_setter!(SetReferrerPolicy, "referrerpolicy");
 
     // https://html.spec.whatwg.org/multipage/#attr-iframe-allowfullscreen
     make_bool_getter!(AllowFullscreen, "allowfullscreen");
