@@ -312,8 +312,10 @@ pub fn determine_requests_referrer(
     referrer_source: ServoUrl,
     current_url: ServoUrl,
 ) -> Option<ServoUrl> {
-    match referrer_policy {
-        ReferrerPolicy::NoReferrer => None,
+    // error!("######### determine_requests_referrer: source {:?} url: {:?}", referrer_source.clone(), current_url.clone());
+
+    let result = match referrer_policy {
+        ReferrerPolicy::EmptyString | ReferrerPolicy::NoReferrer => None,
         ReferrerPolicy::Origin => strip_url_for_use_as_referrer(referrer_source, true),
         ReferrerPolicy::UnsafeUrl => strip_url_for_use_as_referrer(referrer_source, false),
         ReferrerPolicy::StrictOrigin => strict_origin(referrer_source, current_url),
@@ -327,10 +329,15 @@ pub fn determine_requests_referrer(
         ReferrerPolicy::NoReferrerWhenDowngrade => {
             no_referrer_when_downgrade(referrer_source, current_url)
         },
-        ReferrerPolicy::EmptyString => {
-            panic!("determine_requests_referrer should not be called with the empty string");
-        }
-    }
+    };
+
+    error!(
+        "######### determine_requests_referrer: policy {:?} result: {:?}",
+        referrer_policy.clone(),
+        result.clone()
+    );
+
+    return result;
 }
 
 fn set_request_cookies(
@@ -2515,6 +2522,12 @@ fn set_requests_referrer_policy_on_redirect(request: &mut Request, response: &Re
         .headers
         .typed_get::<headers::ReferrerPolicy>()
         .into();
+
+    warn!(
+        "set_requests_referrer_policy_on_redirect: {:?} (request): {:?}",
+        referrer_policy.clone(),
+        request.referrer_policy.clone()
+    );
 
     // Step 2: If policy is not the empty string, then set request’s referrer policy to policy.
     if referrer_policy != ReferrerPolicy::EmptyString {

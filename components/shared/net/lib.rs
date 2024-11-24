@@ -167,7 +167,9 @@ impl From<Option<ReferrerPolicyHeader>> for ReferrerPolicy {
 impl From<ReferrerPolicy> for ReferrerPolicyHeader {
     fn from(referrer_policy: ReferrerPolicy) -> Self {
         match referrer_policy {
-            ReferrerPolicy::NoReferrer => ReferrerPolicyHeader::NO_REFERRER,
+            ReferrerPolicy::EmptyString | ReferrerPolicy::NoReferrer => {
+                ReferrerPolicyHeader::NO_REFERRER
+            },
             ReferrerPolicy::NoReferrerWhenDowngrade => {
                 ReferrerPolicyHeader::NO_REFERRER_WHEN_DOWNGRADE
             },
@@ -176,7 +178,7 @@ impl From<ReferrerPolicy> for ReferrerPolicyHeader {
             ReferrerPolicy::OriginWhenCrossOrigin => ReferrerPolicyHeader::ORIGIN_WHEN_CROSS_ORIGIN,
             ReferrerPolicy::UnsafeUrl => ReferrerPolicyHeader::UNSAFE_URL,
             ReferrerPolicy::StrictOrigin => ReferrerPolicyHeader::STRICT_ORIGIN,
-            ReferrerPolicy::EmptyString | ReferrerPolicy::StrictOriginWhenCrossOrigin => {
+            ReferrerPolicy::StrictOriginWhenCrossOrigin => {
                 ReferrerPolicyHeader::STRICT_ORIGIN_WHEN_CROSS_ORIGIN
             },
         }

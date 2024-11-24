@@ -61,7 +61,7 @@ bitflags! {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum PipelineType {
     InitialAboutBlank,
     Navigation,
@@ -306,9 +306,21 @@ impl HTMLIFrameElement {
         // Step 2.3: If url matches about:blank and initialInsertion is true, then:
         // TODO
 
+        let document = document_from_node(self);
+
         // Step 2.4: Let referrerPolicy be the current state of element's referrerpolicy content
         // attribute.
-        let referrer_policy = self.ReferrerPolicy();
+        let referrer_policy_token = self.ReferrerPolicy();
+
+        let referrer_policy = match determine_policy_for_token(referrer_policy_token.str()) {
+            ReferrerPolicy::EmptyString => document.get_referrer_policy(),
+            _ => determine_policy_for_token(referrer_policy_token.str()),
+        };
+
+        warn!(
+            "-------- process_the_iframe_attributes: referrer_policy: {:?}",
+            referrer_policy.clone()
+        );
 
         // TODO(#25748):
         // By spec, we return early if there's an ancestor browsing context
@@ -342,25 +354,30 @@ impl HTMLIFrameElement {
         };
 
         let document = document_from_node(self);
+
         let load_data = LoadData::new(
             LoadOrigin::Script(document.origin().immutable().clone()),
             url,
             creator_pipeline_id,
             window.upcast::<GlobalScope>().get_referrer(),
-            determine_policy_for_token(referrer_policy.str()),
+            referrer_policy,
             Some(window.upcast::<GlobalScope>().is_secure_context()),
         );
 
         let pipeline_id = self.pipeline_id();
+
         // If the initial `about:blank` page is the current page, load with replacement enabled,
         // see https://html.spec.whatwg.org/multipage/#the-iframe-element:about:blank-3
         let is_about_blank =
             pipeline_id.is_some() && pipeline_id == self.about_blank_pipeline_id.get();
+
         let replace = if is_about_blank {
             HistoryEntryReplacement::Enabled
         } else {
             HistoryEntryReplacement::Disabled
         };
+
+        // Step 7: Navigate: Navigate an iframe or frame given element, url, and referrerPolicy.
         self.navigate_or_reload_child_browsing_context(load_data, replace, can_gc);
     }
 

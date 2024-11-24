@@ -671,6 +671,13 @@ impl ServoParser {
 
         // Steps 3-12 are in another castle, namely finish_load.
         let url = self.tokenizer.url().clone();
+
+        warn!(
+            "calling finish_load on {:?}",
+            LoadType::PageSource(url.clone())
+        );
+
+        // TODO: This may not always be PageSource
         self.document.finish_load(LoadType::PageSource(url), can_gc);
     }
 }

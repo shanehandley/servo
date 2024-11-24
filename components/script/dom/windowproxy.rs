@@ -279,26 +279,33 @@ impl WindowProxy {
         }
     }
 
-    // https://html.spec.whatwg.org/multipage/#auxiliary-browsing-context
+    /// <https://html.spec.whatwg.org/multipage/#auxiliary-browsing-context>
     fn create_auxiliary_browsing_context(
         &self,
         name: DOMString,
         noopener: bool,
     ) -> Option<DomRoot<WindowProxy>> {
         let (chan, port) = ipc::channel().unwrap();
+
         let window = self
             .currently_active
             .get()
             .and_then(ScriptThread::find_document)
             .map(|doc| DomRoot::from_ref(doc.window()))
             .unwrap();
+
         let msg = EmbedderMsg::AllowOpeningWebView(chan);
+
         window.send_to_embedder(msg);
+
         if port.recv().unwrap() {
             let new_top_level_browsing_context_id = TopLevelBrowsingContextId::new();
+
             let new_browsing_context_id =
                 BrowsingContextId::from(new_top_level_browsing_context_id);
+
             let new_pipeline_id = PipelineId::new();
+
             let document = self
                 .currently_active
                 .get()
@@ -306,6 +313,7 @@ impl WindowProxy {
                 .expect("A WindowProxy creating an auxiliary to have an active document");
 
             let blank_url = ServoUrl::parse("about:blank").ok().unwrap();
+
             let load_data = LoadData::new(
                 LoadOrigin::Script(document.origin().immutable().clone()),
                 blank_url,
@@ -334,10 +342,17 @@ impl WindowProxy {
             let constellation_msg = ScriptMsg::ScriptNewAuxiliary(load_info);
             window.send_to_constellation(constellation_msg);
             ScriptThread::process_attach_layout(new_layout_info, document.origin().clone());
+
+            // Step 13 of https://html.spec.whatwg.org/multipage/#creating-a-new-browsing-context
+            // Set up a window environment settings object with about:blank, realm execution
+            // context, null, topLevelCreationURL, and topLevelOrigin.
+            // The primary task here is to set the PolicyContainer
+
             // TODO: if noopener is false, copy the sessionStorage storage area of the creator origin.
             // See step 14 of https://html.spec.whatwg.org/multipage/#creating-a-new-browsing-context
             let auxiliary =
                 ScriptThread::find_document(new_pipeline_id).and_then(|doc| doc.browsing_context());
+
             if let Some(proxy) = auxiliary {
                 if name.to_lowercase() != "_blank" {
                     proxy.set_name(name);
@@ -443,6 +458,7 @@ impl WindowProxy {
                             unsafe { GlobalScope::from_context(cx, in_realm_proof) };
                         let creator =
                             CreatorBrowsingContextInfo::from(parent_browsing_context, None);
+
                         WindowProxy::new_dissimilar_origin(
                             &global_to_clone_from,
                             opener_id,

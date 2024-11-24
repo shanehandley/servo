@@ -43,7 +43,7 @@ function invokeScenario(scenario) {
 const referrerUrlResolver = {
   // The spec allows UAs to "enforce arbitrary policy considerations in the
   // interests of minimizing data leakage"; to start to vaguely approximate
-  // this, we allow stronger policies to be used instead of what's specificed.
+  // this, we allow stronger policies to be used instead of what's specified.
   "omitted": function(sourceUrl) {
     return [undefined];
   },
@@ -59,6 +59,13 @@ const referrerUrlResolver = {
 };
 
 function checkResult(scenario, expectation, result) {
+  // console.log('SCENARIO')
+  // console.log(scenario)
+  // console.log('EXPECTATION')
+  // console.log(expectation)
+  // console.log('RESULT')
+  // console.log(result)
+
 // https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
   let referrerSource = result.sourceContextUrl;
   const sentFromSrcdoc = scenario.source_context_list.length > 0 &&
@@ -78,6 +85,9 @@ function checkResult(scenario, expectation, result) {
   }
   const possibleReferrerUrls =
     referrerUrlResolver[expectation](referrerSource);
+
+  // console.log(result.referrer)
+  // console.log(possibleReferrerUrls)
 
   // Check the reported URL.
   assert_in_array(result.referrer,

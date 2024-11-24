@@ -65,11 +65,11 @@ use metrics::{PaintTimeMetrics, MAX_TASK_NS};
 use mime::{self, Mime};
 use net_traits::image_cache::{ImageCache, PendingImageResponse};
 use net_traits::request::{
-    CredentialsMode, Destination, RedirectMode, RequestBuilder, RequestId, RequestMode,
+    CredentialsMode, Destination, RedirectMode, Referrer, RequestBuilder, RequestId, RequestMode,
 };
 use net_traits::storage_thread::StorageType;
 use net_traits::{
-    FetchMetadata, FetchResponseListener, FetchResponseMsg, Metadata, NetworkError,
+    FetchMetadata, FetchResponseListener, FetchResponseMsg, Metadata, NetworkError, ReferrerPolicy,
     ResourceFetchTiming, ResourceThreads, ResourceTimingType,
 };
 use percent_encoding::percent_decode;
@@ -3226,11 +3226,14 @@ impl ScriptThread {
         metadata: Option<Metadata>,
         can_gc: CanGc,
     ) -> Option<DomRoot<ServoParser>> {
+        warn!("handle_page_headers_available");
+
         let idx = self
             .incomplete_loads
             .borrow()
             .iter()
             .position(|load| load.pipeline_id == *id);
+
         // The matching in progress load structure may not exist if
         // the pipeline exited before the page load completed.
         match idx {
@@ -3257,9 +3260,11 @@ impl ScriptThread {
                             window_proxy.stop_delaying_load_events_mode();
                         }
                     }
+
                     self.script_sender
                         .send((*id, ScriptMsg::AbortLoadUrl))
                         .unwrap();
+
                     return None;
                 };
 
@@ -3670,7 +3675,7 @@ impl ScriptThread {
                 ))
                 .unwrap();
         }
-        debug!(
+        warn!(
             "ScriptThread: loading {} on pipeline {:?}",
             incomplete.url, incomplete.pipeline_id
         );
@@ -3782,6 +3787,7 @@ impl ScriptThread {
             incomplete.parent_info,
             incomplete.opener,
         );
+
         if window_proxy.parent().is_some() {
             // https://html.spec.whatwg.org/multipage/#navigating-across-documents:delaying-load-events-mode-2
             // The user agent must take this nested browsing context
@@ -3789,6 +3795,7 @@ impl ScriptThread {
             // when this navigation algorithm later matures.
             window_proxy.stop_delaying_load_events_mode();
         }
+
         window.init_window_proxy(&window_proxy);
 
         let last_modified = metadata.headers.as_ref().and_then(|headers| {
@@ -3823,10 +3830,28 @@ impl ScriptThread {
             _ => IsHTMLDocument::HTMLDocument,
         };
 
-        let referrer = metadata
-            .referrer
-            .as_ref()
-            .map(|referrer| referrer.clone().into_string());
+        // If creator is non-null, then:
+        // Set document's referrer to the serialization of creator's URL.
+        // Set document's policy container to a clone of creator's policy container.
+        let (referrer, referrer_policy) = if window_proxy.parent().is_some() {
+            (
+                window_proxy.creator_url().map(|u| String::from(u.as_str())),
+                ReferrerPolicy::Origin,
+            )
+        } else {
+            let referrer = metadata
+                .referrer
+                .as_ref()
+                .map(|referrer| referrer.clone().into_string());
+
+            let referrer_policy: ReferrerPolicy = metadata
+                .headers
+                .as_deref()
+                .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
+                .into();
+
+            (referrer, referrer_policy)
+        };
 
         let document = Document::new(
             &window,
@@ -3845,11 +3870,13 @@ impl ScriptThread {
             can_gc,
         );
 
-        let referrer_policy = metadata
-            .headers
-            .as_deref()
-            .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
-            .into();
+        let alt_referrer_policy = metadata.referrer_policy;
+
+        warn!(
+            "ssssssss referrer_policy: {:?} load data had {:?}",
+            referrer_policy.clone(),
+            alt_referrer_policy
+        );
 
         document.set_referrer_policy(referrer_policy);
         document.set_ready_state(DocumentReadyState::Loading, can_gc);
