@@ -196,6 +196,7 @@ impl ServoParser {
         let context_document = context_node.owner_doc();
         let window = context_document.window();
         let url = context_document.url();
+        let policy_container = context_document.policy_container().to_owned();
 
         // Step 1.
         let loader = DocumentLoader::new_with_threads(
@@ -216,6 +217,7 @@ impl ServoParser {
             None,
             None,
             Default::default(),
+            Some(policy_container),
             can_gc,
         );
 
@@ -672,10 +674,10 @@ impl ServoParser {
         // Steps 3-12 are in another castle, namely finish_load.
         let url = self.tokenizer.url().clone();
 
-        warn!(
-            "calling finish_load on {:?}",
-            LoadType::PageSource(url.clone())
-        );
+        // warn!(
+        //     "calling finish_load on {:?}",
+        //     LoadType::PageSource(url.clone())
+        // );
 
         // TODO: This may not always be PageSource
         self.document.finish_load(LoadType::PageSource(url), can_gc);

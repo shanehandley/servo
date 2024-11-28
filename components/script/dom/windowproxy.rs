@@ -29,6 +29,7 @@ use js::rust::wrappers::{JS_TransplantObject, NewWindowProxy, SetWindowProxy};
 use js::rust::{get_object_class, Handle, MutableHandle, MutableHandleValue};
 use js::JSCLASS_IS_GLOBAL;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
+use net_traits::policy_container::{self, PolicyContainer};
 use net_traits::request::Referrer;
 use script_traits::{
     AuxiliaryBrowsingContextLoadInfo, HistoryEntryReplacement, LoadData, LoadOrigin, NewLayoutInfo,
@@ -124,6 +125,10 @@ pub struct WindowProxy {
     /// The creator browsing context's origin.
     #[no_trace]
     creator_origin: Option<ImmutableOrigin>,
+
+    /// The creator browsing context's policy container
+    #[no_trace]
+    creator_policy_container: Option<PolicyContainer>,
 }
 
 impl WindowProxy {
@@ -155,6 +160,7 @@ impl WindowProxy {
             creator_base_url: creator.base_url,
             creator_url: creator.url,
             creator_origin: creator.origin,
+            creator_policy_container: creator.policy_container,
         }
     }
 
@@ -423,6 +429,11 @@ impl WindowProxy {
     /// <https://html.spec.whatwg.org/multipage/#creator-origin>
     pub fn creator_origin(&self) -> Option<ImmutableOrigin> {
         self.creator_origin.clone()
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#creator-origin>
+    pub fn creator_policy_container(&self) -> Option<PolicyContainer> {
+        self.creator_policy_container.clone()
     }
 
     pub fn has_creator_origin(&self) -> bool {
@@ -739,6 +750,9 @@ impl WindowProxy {
 /// active document of that creator browsing context at the time A was created is the creator
 /// Document.
 ///
+///
+/// TODO: PolicyContainer
+///
 /// See: <https://html.spec.whatwg.org/multipage/#creating-browsing-contexts>
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CreatorBrowsingContextInfo {
@@ -750,6 +764,9 @@ pub struct CreatorBrowsingContextInfo {
 
     /// Creator document origin.
     origin: Option<ImmutableOrigin>,
+
+    /// Creator policy container, which may be inherited by a child browsing context
+    policy_container: Option<PolicyContainer>,
 }
 
 impl CreatorBrowsingContextInfo {
@@ -768,11 +785,15 @@ impl CreatorBrowsingContextInfo {
         let origin = creator
             .as_deref()
             .map(|document| document.origin().immutable().clone());
+        let policy_container = creator
+            .as_deref()
+            .map(|document| document.policy_container().to_owned());
 
         CreatorBrowsingContextInfo {
             base_url,
             url,
             origin,
+            policy_container,
         }
     }
 }

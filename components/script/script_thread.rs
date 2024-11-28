@@ -69,8 +69,8 @@ use net_traits::request::{
 };
 use net_traits::storage_thread::StorageType;
 use net_traits::{
-    FetchMetadata, FetchResponseListener, FetchResponseMsg, Metadata, NetworkError, ReferrerPolicy,
-    ResourceFetchTiming, ResourceThreads, ResourceTimingType,
+    policy_container, FetchMetadata, FetchResponseListener, FetchResponseMsg, Metadata,
+    NetworkError, ReferrerPolicy, ResourceFetchTiming, ResourceThreads, ResourceTimingType,
 };
 use percent_encoding::percent_decode;
 use profile_traits::mem::{self as profile_mem, OpaqueSender, ReportsChan};
@@ -3620,11 +3620,13 @@ impl ScriptThread {
             // this will be done instead when the script-thread handles the `SetDocumentActivity` msg.
             return DomRoot::from_ref(window_proxy);
         }
+
         let iframe = parent_info.and_then(|parent_id| {
             self.documents
                 .borrow()
                 .find_iframe(parent_id, browsing_context_id)
         });
+
         let parent_browsing_context = match (parent_info, iframe.as_ref()) {
             (_, Some(iframe)) => Some(window_from_node(&**iframe).window_proxy()),
             (Some(parent_id), _) => self.remote_window_proxy(
@@ -3830,29 +3832,25 @@ impl ScriptThread {
             _ => IsHTMLDocument::HTMLDocument,
         };
 
-        // If creator is non-null, then:
-        // Set document's referrer to the serialization of creator's URL.
-        // Set document's policy container to a clone of creator's policy container.
-        let (referrer, referrer_policy) = if window_proxy.parent().is_some() {
-            (
-                window_proxy.creator_url().map(|u| String::from(u.as_str())),
-                ReferrerPolicy::Origin,
-            )
-        } else {
-            let referrer = metadata
-                .referrer
-                .as_ref()
-                .map(|referrer| referrer.clone().into_string());
-
-            let referrer_policy: ReferrerPolicy = metadata
-                .headers
-                .as_deref()
-                .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
-                .into();
-
-            (referrer, referrer_policy)
+        // Step 16: If creator is non-null, then:
+        // Note: declared here as they are arguments to the document constructor
+        let (referrer, policy_container) = match window_proxy.parent() {
+            Some(parent) => (
+                // Step 16.1: Set document's referrer to the serialization of creator's URL.
+                parent.creator_url().map(|u| String::from(u.as_str())),
+                // Step 16.2: Set document's policy container to a clone of creator's policy container.
+                parent.creator_policy_container(),
+            ),
+            None => (
+                metadata
+                    .referrer
+                    .as_ref()
+                    .map(|referrer| referrer.clone().into_string()),
+                None,
+            ),
         };
 
+        // Step 15: Let document be a new Document, with:
         let document = Document::new(
             &window,
             HasBrowsingContext::Yes,
@@ -3867,18 +3865,54 @@ impl ScriptThread {
             referrer,
             Some(metadata.status.raw_code()),
             incomplete.canceller,
+            policy_container,
             can_gc,
         );
 
-        let alt_referrer_policy = metadata.referrer_policy;
+        // // Set document's referrer to the serialization of creator's URL.
+        // // Set document's policy container to a clone of creator's policy container.
+        // let (referrer, referrer_policy) = if window_proxy.parent().is_some() {
+        //     (
+        //         window_proxy.creator_url().map(|u| String::from(u.as_str())),
+        //         ReferrerPolicy::Origin,
+        //     )
+        // } else {
+        //     let referrer = metadata
+        //         .referrer
+        //         .as_ref()
+        //         .map(|referrer| referrer.clone().into_string());
 
-        warn!(
-            "ssssssss referrer_policy: {:?} load data had {:?}",
-            referrer_policy.clone(),
-            alt_referrer_policy
-        );
+        //     let referrer_policy: ReferrerPolicy = metadata
+        //         .headers
+        //         .as_deref()
+        //         .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
+        //         .into();
 
-        document.set_referrer_policy(referrer_policy);
+        //     let alt_referrer_policy = metadata.referrer_policy;
+
+        //     (referrer, referrer_policy)
+        // };
+
+        // Step 17: Assert: document's URL and document's relevant settings object's creation URL
+        // are about:blank.
+
+        // let meta_headers_referrrer_policy: ReferrerPolicy = metadata
+        //     .headers
+        //     .as_deref()
+        //     .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
+        //     .into();
+
+        // let alt_referrer_policy = metadata.referrer_policy;
+        // let policy_container_referrer_policy = metadata.policy_container.get_referrer_policy();
+
+        // warn!(
+        //     "ssssssss meta_headers_referrrer_policy: {:?} alt_referrer_policy {:?} policy_container_referrer_policy {:?}",
+        //     meta_headers_referrrer_policy.clone(),
+        //     alt_referrer_policy,
+        //     policy_container_referrer_policy
+        // );
+
+        // document.set_referrer_policy(metadata.referrer_policy);
         document.set_ready_state(DocumentReadyState::Loading, can_gc);
 
         self.documents

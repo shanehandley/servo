@@ -23,6 +23,7 @@ use ipc_channel::Error as IpcError;
 use malloc_size_of::malloc_size_of_is_0;
 use malloc_size_of_derive::MallocSizeOf;
 use mime::Mime;
+use policy_container::PolicyContainer;
 use request::RequestId;
 use rustls::Certificate;
 use serde::{Deserialize, Serialize};
@@ -795,8 +796,13 @@ pub struct Metadata {
 
     /// Referrer Policy of the Request used to obtain Response
     pub referrer_policy: ReferrerPolicy,
+
+    /// Policy container of the Request used to obtain Response
+    pub policy_container: PolicyContainer,
+
     /// Performance information for navigation events
     pub timing: Option<ResourceFetchTiming>,
+
     /// True if the request comes from a redirection
     pub redirected: bool,
 }
@@ -814,6 +820,7 @@ impl Metadata {
             https_state: HttpsState::None,
             referrer: None,
             referrer_policy: ReferrerPolicy::EmptyString,
+            policy_container: PolicyContainer::default(),
             timing: None,
             redirected: false,
         }

@@ -2308,6 +2308,7 @@ impl Node {
                     None,
                     document.status_code(),
                     Default::default(),
+                    Some(document.policy_container().to_owned()),
                     can_gc,
                 );
                 DomRoot::upcast::<Node>(document)

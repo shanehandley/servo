@@ -331,11 +331,11 @@ pub fn determine_requests_referrer(
         },
     };
 
-    error!(
-        "######### determine_requests_referrer: policy {:?} result: {:?}",
-        referrer_policy.clone(),
-        result.clone()
-    );
+    // error!(
+    //     "######### determine_requests_referrer: policy {:?} result: {:?}",
+    //     referrer_policy.clone(),
+    //     result.clone()
+    // );
 
     return result;
 }

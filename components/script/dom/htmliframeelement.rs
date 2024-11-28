@@ -253,7 +253,15 @@ impl HTMLIFrameElement {
             .upcast::<Element>()
             .has_attribute(&local_name!("srcdoc"))
         {
-            let url = ServoUrl::parse("about:srcdoc").unwrap();
+            // Step 1.1: Set element's current navigation was lazy loaded boolean to false.
+
+            // Step 1.2: If the will lazy load element steps given element return true, then:
+
+            // TODO: https://html.spec.whatwg.org/multipage/urls-and-fetching.html#will-lazy-load-element-steps
+
+            // Step 1.3: Navigate to the srcdoc resource: Navigate an iframe or frame given element,
+            // about:srcdoc, the empty string, and the value of element's srcdoc attribute.
+            let url: ServoUrl = ServoUrl::parse("about:srcdoc").unwrap();
             let document = document_from_node(self);
             let window = window_from_node(self);
             let pipeline_id = Some(window.upcast::<GlobalScope>().pipeline_id());
@@ -382,6 +390,8 @@ impl HTMLIFrameElement {
     }
 
     fn create_nested_browsing_context(&self, can_gc: CanGc) {
+        warn!("create_nested_browsing_context");
+
         // Synchronously create a new browsing context, which will present
         // `about:blank`. (This is not a navigation.)
         //
