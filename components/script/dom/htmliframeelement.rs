@@ -300,6 +300,17 @@ impl HTMLIFrameElement {
         // >    `element`.
         let url = self.get_url();
 
+        // Step 2.3: If url matches about:blank and initialInsertion is true, then:
+        if url.as_str() == "about:blank" && mode == ProcessingMode::FirstTime {
+            // Step 2.3.1: Run the iframe load event steps given element.
+            let pipeline_id = window.upcast::<GlobalScope>().pipeline_id();
+
+            self.iframe_load_event_steps(pipeline_id, can_gc);
+
+            // Step 2.3.2: Return.
+            return;
+        }
+
         // TODO(#25748):
         // By spec, we return early if there's an ancestor browsing context
         // "whose active document's url, ignoring fragments, is equal".
@@ -489,7 +500,7 @@ impl HTMLIFrameElement {
         }
     }
 
-    /// <https://html.spec.whatwg.org/multipage/#iframe-load-event-steps> steps 1-4
+    /// <https://html.spec.whatwg.org/multipage/#iframe-load-event-steps>
     pub fn iframe_load_event_steps(&self, loaded_pipeline: PipelineId, can_gc: CanGc) {
         // TODO(#9592): assert that the load blocker is present at all times when we
         //              can guarantee that it's created for the case of iframe.reload().
@@ -500,17 +511,30 @@ impl HTMLIFrameElement {
         // TODO A cross-origin child document would not be easily accessible
         //      from this script thread. It's unclear how to implement
         //      steps 2, 3, and 5 efficiently in this case.
-        // TODO Step 2 - check child document `mute iframe load` flag
-        // TODO Step 3 - set child document  `mut iframe load` flag
 
-        // Step 4
+        // Step 2: Let childDocument be element's content navigable's active document.
+        let document = document_from_node(self);
+
+        // Step 3: If childDocument has its mute iframe load flag set, then return.
+        if document.mute_iframe_load() {
+            return;
+        }
+
+        // Step 4: If element's pending resource-timing start time is not null, then:
+        // TODO Steps 4.1 - 4.4
+
+        // Step 5: Set childDocument's iframe load in progress flag.
+        document.set_iframe_load_in_progress(true);
+
+        // Step 6: Fire an event named load at element.
         self.upcast::<EventTarget>()
             .fire_event(atom!("load"), can_gc);
 
+        // Step 7: Unset childDocument's iframe load in progress flag.
+        document.set_iframe_load_in_progress(false);
+
         let blocker = &self.load_blocker;
         LoadBlocker::terminate(blocker, can_gc);
-
-        // TODO Step 5 - unset child document `mut iframe load` flag
     }
 }
 

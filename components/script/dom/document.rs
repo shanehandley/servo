@@ -484,6 +484,10 @@ pub struct Document {
     visibility_state: Cell<DocumentVisibilityState>,
     /// <https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml>
     status_code: Option<u16>,
+    /// <https://html.spec.whatwg.org/multipage/#mute-iframe-load>
+    mute_iframe_load: Cell<bool>,
+    /// <https://html.spec.whatwg.org/multipage/#iframe-load-in-progress>
+    iframe_load_in_progress: Cell<bool>,
 }
 
 #[derive(JSTraceable, MallocSizeOf)]
@@ -3441,6 +3445,8 @@ impl Document {
             fonts: Default::default(),
             visibility_state: Cell::new(DocumentVisibilityState::Hidden),
             status_code,
+            mute_iframe_load: Cell::new(false),
+            iframe_load_in_progress: Cell::new(false),
         }
     }
 
@@ -4213,6 +4219,18 @@ impl Document {
     }
     pub(crate) fn set_declarative_refresh(&self, refresh: DeclarativeRefresh) {
         *self.declarative_refresh.borrow_mut() = Some(refresh);
+    }
+
+    pub(crate) fn set_iframe_load_in_progress(&self, in_progress: bool) {
+        self.iframe_load_in_progress.set(in_progress);
+    }
+
+    pub(crate) fn set_mute_iframe_load(&self, enabled: bool) {
+        self.mute_iframe_load.set(enabled);
+    }
+
+    pub(crate) fn mute_iframe_load(&self) -> bool {
+        self.mute_iframe_load.get()
     }
 
     /// <https://html.spec.whatwg.org/multipage/#visibility-state>
