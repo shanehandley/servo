@@ -500,6 +500,10 @@ pub struct Document {
     status_code: Option<u16>,
     /// <https://html.spec.whatwg.org/multipage/#is-initial-about:blank>
     is_initial_about_blank: Cell<bool>,
+    /// <https://html.spec.whatwg.org/multipage/#mute-iframe-load>
+    mute_iframe_load: Cell<bool>,
+    /// <https://html.spec.whatwg.org/multipage/#iframe-load-in-progress>
+    iframe_load_in_progress: Cell<bool>,
 }
 
 #[allow(non_snake_case)]
@@ -3371,6 +3375,8 @@ impl Document {
             visibility_state: Cell::new(DocumentVisibilityState::Hidden),
             status_code,
             is_initial_about_blank: Cell::new(is_initial_about_blank),
+            mute_iframe_load: Cell::new(false),
+            iframe_load_in_progress: Cell::new(false),
         }
     }
 
@@ -4144,6 +4150,14 @@ impl Document {
     }
     pub(crate) fn set_declarative_refresh(&self, refresh: DeclarativeRefresh) {
         *self.declarative_refresh.borrow_mut() = Some(refresh);
+    }
+
+    pub(crate) fn set_iframe_load_in_progress(&self, in_progress: bool) {
+        self.iframe_load_in_progress.set(in_progress);
+    }
+
+    pub(crate) fn mute_iframe_load(&self) -> bool {
+        self.mute_iframe_load.get()
     }
 
     /// <https://html.spec.whatwg.org/multipage/#visibility-state>
@@ -5366,8 +5380,10 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
 
         // Step 14. If document's iframe load in progress flag is set, then set document's mute
         // iframe load flag.
-        // TODO: https://github.com/servo/servo/issues/21938
-
+        if self.iframe_load_in_progress.get() == true {
+            self.mute_iframe_load.set(true);
+        }
+        
         // Step 15: Set document to no-quirks mode.
         self.set_quirks_mode(QuirksMode::NoQuirks);
 

@@ -248,6 +248,56 @@ impl HTMLIFrameElement {
         }
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#shared-attribute-processing-steps-for-iframe-and-frame-elements>
+    fn shared_attribute_processing_steps(&self, mode: &ProcessingMode, can_gc: CanGc) -> Option<ServoUrl> {
+        // 1. Let url be the URL record about:blank.
+        // 2. If element has a src attribute specified, and its value is not the empty string, then:
+        // These steps are handled in `get_url`
+        let url = self.get_url();
+
+        // Step 3. If the inclusive ancestor navigables of element's node navigable contains a
+        // navigable whose active document's URL equals url with exclude fragments set to true,
+        // then return null.
+        // TODO(#25748):
+        // By spec, we return early if there's an ancestor browsing context
+        // "whose active document's url, ignoring fragments, is equal".
+        // However, asking about ancestor browsing contexts is more nuanced than
+        // it sounds and not implemented here.
+        // Within a single origin, we can do it by walking window proxies,
+        // and this check covers only that single-origin case, protecting
+        // against simple typo self-includes but nothing more elaborate.
+        let window = window_from_node(self);
+        let mut ancestor = window.GetParent();
+
+        while let Some(a) = ancestor {
+            if let Some(ancestor_url) = a.document().map(|d| d.url()) {
+                if ancestor_url.scheme() == url.scheme() &&
+                    ancestor_url.username() == url.username() &&
+                    ancestor_url.password() == url.password() &&
+                    ancestor_url.host() == url.host() &&
+                    ancestor_url.port() == url.port() &&
+                    ancestor_url.path() == url.path() &&
+                    ancestor_url.query() == url.query()
+                {
+                    return None;
+                }
+            }
+            ancestor = a.parent().map(DomRoot::from_ref);
+        }
+
+        // 4. If url matches about:blank and initialInsertion is true, then perform the URL and
+        // history update steps given element's content navigable's active document and url.
+        if url.as_str() == "about:blank" && *mode == ProcessingMode::FirstTime {
+            // Step 2.3.1: Run the iframe load event steps given element.
+            let pipeline_id = window.upcast::<GlobalScope>().pipeline_id();
+
+            self.iframe_load_event_steps(pipeline_id, can_gc);
+        }
+
+        // 5. Return url.
+        Some(url)
+    } 
+
     /// <https://html.spec.whatwg.org/multipage/#process-the-iframe-attributes>
     fn process_the_iframe_attributes(&self, mode: ProcessingMode, can_gc: CanGc) {
         // > 1. If `element`'s `srcdoc` attribute is specified, then:
@@ -299,11 +349,26 @@ impl HTMLIFrameElement {
             return;
         }
 
-        // > 2. Otherwise, if `element` has a `src` attribute specified, or
-        // >    `initialInsertion` is false, then run the shared attribute
-        // >    processing steps for `iframe` and `frame` elements given
-        // >    `element`.
-        let url = self.get_url();
+        // 2.1. Let url be the result of running the shared attribute processing steps for iframe
+        // and frame elements given element and initialInsertion.
+        // 2.2. If url is null, then return.
+        let url = match self.shared_attribute_processing_steps(&mode, can_gc) {
+            Some(url) => url,
+            None => {
+                return;
+            }
+        };
+
+        // Step 2.3: If url matches about:blank and initialInsertion is true, then:
+        if url.as_str() == "about:blank" && mode == ProcessingMode::FirstTime {
+            // Step 2.3.1: Run the iframe load event steps given element.
+            let pipeline_id = window.upcast::<GlobalScope>().pipeline_id();
+
+            self.iframe_load_event_steps(pipeline_id, can_gc);
+
+            // Step 2.3.2: Return.
+            return;
+        }
 
         // Step 2.4: Let referrerPolicy be the current state of element's referrerpolicy content
         // attribute.
@@ -317,31 +382,6 @@ impl HTMLIFrameElement {
             ReferrerPolicy::EmptyString => document.get_referrer_policy(),
             policy => policy,
         };
-
-        // TODO(#25748):
-        // By spec, we return early if there's an ancestor browsing context
-        // "whose active document's url, ignoring fragments, is equal".
-        // However, asking about ancestor browsing contexts is more nuanced than
-        // it sounds and not implemented here.
-        // Within a single origin, we can do it by walking window proxies,
-        // and this check covers only that single-origin case, protecting
-        // against simple typo self-includes but nothing more elaborate.
-        let mut ancestor = window.GetParent();
-        while let Some(a) = ancestor {
-            if let Some(ancestor_url) = a.document().map(|d| d.url()) {
-                if ancestor_url.scheme() == url.scheme() &&
-                    ancestor_url.username() == url.username() &&
-                    ancestor_url.password() == url.password() &&
-                    ancestor_url.host() == url.host() &&
-                    ancestor_url.port() == url.port() &&
-                    ancestor_url.path() == url.path() &&
-                    ancestor_url.query() == url.query()
-                {
-                    return;
-                }
-            }
-            ancestor = a.parent().map(DomRoot::from_ref);
-        }
 
         let creator_pipeline_id = if url.as_str() == "about:blank" {
             Some(window.upcast::<GlobalScope>().pipeline_id())
@@ -506,7 +546,7 @@ impl HTMLIFrameElement {
         }
     }
 
-    /// <https://html.spec.whatwg.org/multipage/#iframe-load-event-steps> steps 1-4
+    /// <https://html.spec.whatwg.org/multipage/#iframe-load-event-steps>
     pub fn iframe_load_event_steps(&self, loaded_pipeline: PipelineId, can_gc: CanGc) {
         // TODO(#9592): assert that the load blocker is present at all times when we
         //              can guarantee that it's created for the case of iframe.reload().
@@ -517,17 +557,30 @@ impl HTMLIFrameElement {
         // TODO A cross-origin child document would not be easily accessible
         //      from this script thread. It's unclear how to implement
         //      steps 2, 3, and 5 efficiently in this case.
-        // TODO Step 2 - check child document `mute iframe load` flag
-        // TODO Step 3 - set child document  `mut iframe load` flag
 
-        // Step 4
+        // Step 2. Let childDocument be element's content navigable's active document.
+        let document = document_from_node(self);
+
+        // Step 3. If childDocument has its mute iframe load flag set, then return.
+        if document.mute_iframe_load() {
+            return;
+        }
+
+        // Step 4. If element's pending resource-timing start time is not null, then:
+        // TODO Steps 4.1 - 4.4
+
+        // Step 5. Set childDocument's iframe load in progress flag.
+        document.set_iframe_load_in_progress(true);
+
+        // Step 6. Fire an event named load at element.
         self.upcast::<EventTarget>()
             .fire_event(atom!("load"), can_gc);
 
+        // Step 7. Unset childDocument's iframe load in progress flag.
+        document.set_iframe_load_in_progress(false);
+
         let blocker = &self.load_blocker;
         LoadBlocker::terminate(blocker, can_gc);
-
-        // TODO Step 5 - unset child document `mut iframe load` flag
     }
 }
 
