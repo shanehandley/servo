@@ -23,6 +23,7 @@ use ipc_channel::Error as IpcError;
 use malloc_size_of::malloc_size_of_is_0;
 use malloc_size_of_derive::MallocSizeOf;
 use mime::Mime;
+use policy_container::PolicyContainer;
 use request::RequestId;
 use rustls::Certificate;
 use serde::{Deserialize, Serialize};
@@ -167,7 +168,9 @@ impl From<Option<ReferrerPolicyHeader>> for ReferrerPolicy {
 impl From<ReferrerPolicy> for ReferrerPolicyHeader {
     fn from(referrer_policy: ReferrerPolicy) -> Self {
         match referrer_policy {
-            ReferrerPolicy::NoReferrer => ReferrerPolicyHeader::NO_REFERRER,
+            ReferrerPolicy::EmptyString | ReferrerPolicy::NoReferrer => {
+                ReferrerPolicyHeader::NO_REFERRER
+            },
             ReferrerPolicy::NoReferrerWhenDowngrade => {
                 ReferrerPolicyHeader::NO_REFERRER_WHEN_DOWNGRADE
             },
@@ -176,7 +179,7 @@ impl From<ReferrerPolicy> for ReferrerPolicyHeader {
             ReferrerPolicy::OriginWhenCrossOrigin => ReferrerPolicyHeader::ORIGIN_WHEN_CROSS_ORIGIN,
             ReferrerPolicy::UnsafeUrl => ReferrerPolicyHeader::UNSAFE_URL,
             ReferrerPolicy::StrictOrigin => ReferrerPolicyHeader::STRICT_ORIGIN,
-            ReferrerPolicy::EmptyString | ReferrerPolicy::StrictOriginWhenCrossOrigin => {
+            ReferrerPolicy::StrictOriginWhenCrossOrigin => {
                 ReferrerPolicyHeader::STRICT_ORIGIN_WHEN_CROSS_ORIGIN
             },
         }
@@ -793,8 +796,13 @@ pub struct Metadata {
 
     /// Referrer Policy of the Request used to obtain Response
     pub referrer_policy: ReferrerPolicy,
+
+    /// Policy container of the Request used to obtain Response
+    pub policy_container: PolicyContainer,
+
     /// Performance information for navigation events
     pub timing: Option<ResourceFetchTiming>,
+
     /// True if the request comes from a redirection
     pub redirected: bool,
 }
@@ -812,6 +820,7 @@ impl Metadata {
             https_state: HttpsState::None,
             referrer: None,
             referrer_policy: ReferrerPolicy::EmptyString,
+            policy_container: PolicyContainer::default(),
             timing: None,
             redirected: false,
         }

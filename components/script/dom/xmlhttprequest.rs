@@ -1534,6 +1534,7 @@ impl XMLHttpRequest {
             None,
             None,
             Default::default(),
+            None, // TODO
             can_gc,
         )
     }

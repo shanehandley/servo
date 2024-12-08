@@ -3308,6 +3308,7 @@ impl Document {
         doc_loader: DocumentLoader,
         referrer: Option<String>,
         status_code: Option<u16>,
+        policy_container: Option<PolicyContainer>,
         canceller: FetchCanceller,
     ) -> Document {
         let url = url.unwrap_or_else(|| ServoUrl::parse("about:blank").unwrap());
@@ -3413,7 +3414,7 @@ impl Document {
             origin,
             referrer,
             target_element: MutNullableDom::new(None),
-            policy_container: DomRefCell::new(PolicyContainer::default()),
+            policy_container: DomRefCell::new(policy_container.unwrap_or_default()),
             last_click_info: DomRefCell::new(None),
             ignore_destructive_writes_counter: Default::default(),
             ignore_opens_during_unload_counter: Default::default(),
@@ -3570,6 +3571,7 @@ impl Document {
         referrer: Option<String>,
         status_code: Option<u16>,
         canceller: FetchCanceller,
+        policy_container: Option<PolicyContainer>,
         can_gc: CanGc,
     ) -> DomRoot<Document> {
         Self::new_with_proto(
@@ -3587,6 +3589,7 @@ impl Document {
             referrer,
             status_code,
             canceller,
+            policy_container,
             can_gc,
         )
     }
@@ -3607,6 +3610,7 @@ impl Document {
         referrer: Option<String>,
         status_code: Option<u16>,
         canceller: FetchCanceller,
+        policy_container: Option<PolicyContainer>,
         can_gc: CanGc,
     ) -> DomRoot<Document> {
         let document = reflect_dom_object_with_proto(
@@ -3623,6 +3627,7 @@ impl Document {
                 doc_loader,
                 referrer,
                 status_code,
+                policy_container,
                 canceller,
             )),
             window,
@@ -3747,6 +3752,7 @@ impl Document {
                     None,
                     None,
                     Default::default(),
+                    None,
                     can_gc,
                 );
                 new_doc
@@ -4313,6 +4319,7 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
             None,
             None,
             Default::default(),
+            None, // TODO can get from doc
             can_gc,
         ))
     }

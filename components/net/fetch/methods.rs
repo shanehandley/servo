@@ -279,7 +279,20 @@ pub async fn main_fetch(
     // Step 8: If request’s referrer policy is the empty string, then set request’s referrer policy
     // to request’s policy container’s referrer policy.
     if request.referrer_policy == ReferrerPolicy::EmptyString {
+        let policy_container_refpol = policy_container.get_referrer_policy();
+
+        if request.destination == Destination::Document {
+            warn!(
+                "Setting requests referrer policy to that of polcont: {:?}",
+                policy_container_refpol.clone()
+            );
+        }
+
         request.referrer_policy = policy_container.get_referrer_policy();
+    }
+
+    if request.destination == Destination::Document {
+        warn!("-------- Request: {:?}", request.current_url().clone());
     }
 
     let referrer_url = match mem::replace(&mut request.referrer, Referrer::NoReferrer) {
@@ -293,6 +306,7 @@ pub async fn main_fetch(
             )
         },
     };
+
     request.referrer = referrer_url.map_or(Referrer::NoReferrer, Referrer::ReferrerUrl);
 
     // Step 9.

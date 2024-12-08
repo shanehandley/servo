@@ -65,12 +65,12 @@ use metrics::{PaintTimeMetrics, MAX_TASK_NS};
 use mime::{self, Mime};
 use net_traits::image_cache::{ImageCache, PendingImageResponse};
 use net_traits::request::{
-    CredentialsMode, Destination, RedirectMode, RequestBuilder, RequestId, RequestMode,
+    CredentialsMode, Destination, RedirectMode, Referrer, RequestBuilder, RequestId, RequestMode,
 };
 use net_traits::storage_thread::StorageType;
 use net_traits::{
-    FetchMetadata, FetchResponseListener, FetchResponseMsg, Metadata, NetworkError,
-    ResourceFetchTiming, ResourceThreads, ResourceTimingType,
+    policy_container, FetchMetadata, FetchResponseListener, FetchResponseMsg, Metadata,
+    NetworkError, ReferrerPolicy, ResourceFetchTiming, ResourceThreads, ResourceTimingType,
 };
 use percent_encoding::percent_decode;
 use profile_traits::mem::{self as profile_mem, OpaqueSender, ReportsChan};
@@ -3252,11 +3252,14 @@ impl ScriptThread {
         metadata: Option<Metadata>,
         can_gc: CanGc,
     ) -> Option<DomRoot<ServoParser>> {
+        warn!("handle_page_headers_available");
+
         let idx = self
             .incomplete_loads
             .borrow()
             .iter()
             .position(|load| load.pipeline_id == *id);
+
         // The matching in progress load structure may not exist if
         // the pipeline exited before the page load completed.
         match idx {
@@ -3283,9 +3286,11 @@ impl ScriptThread {
                             window_proxy.stop_delaying_load_events_mode();
                         }
                     }
+
                     self.script_sender
                         .send((*id, ScriptMsg::AbortLoadUrl))
                         .unwrap();
+
                     return None;
                 };
 
@@ -3641,11 +3646,13 @@ impl ScriptThread {
             // this will be done instead when the script-thread handles the `SetDocumentActivity` msg.
             return DomRoot::from_ref(window_proxy);
         }
+
         let iframe = parent_info.and_then(|parent_id| {
             self.documents
                 .borrow()
                 .find_iframe(parent_id, browsing_context_id)
         });
+
         let parent_browsing_context = match (parent_info, iframe.as_ref()) {
             (_, Some(iframe)) => Some(window_from_node(&**iframe).window_proxy()),
             (Some(parent_id), _) => self.remote_window_proxy(
@@ -3696,7 +3703,7 @@ impl ScriptThread {
                 ))
                 .unwrap();
         }
-        debug!(
+        warn!(
             "ScriptThread: loading {} on pipeline {:?}",
             incomplete.url, incomplete.pipeline_id
         );
@@ -3809,6 +3816,7 @@ impl ScriptThread {
             incomplete.parent_info,
             incomplete.opener,
         );
+
         if window_proxy.parent().is_some() {
             // https://html.spec.whatwg.org/multipage/#navigating-across-documents:delaying-load-events-mode-2
             // The user agent must take this nested browsing context
@@ -3816,6 +3824,7 @@ impl ScriptThread {
             // when this navigation algorithm later matures.
             window_proxy.stop_delaying_load_events_mode();
         }
+
         window.init_window_proxy(&window_proxy);
 
         let last_modified = metadata.headers.as_ref().and_then(|headers| {
@@ -3850,11 +3859,25 @@ impl ScriptThread {
             _ => IsHTMLDocument::HTMLDocument,
         };
 
-        let referrer = metadata
-            .referrer
-            .as_ref()
-            .map(|referrer| referrer.clone().into_string());
+        // Step 16: If creator is non-null, then:
+        // Note: declared here as they are arguments to the document constructor
+        let (referrer, policy_container) = match window_proxy.parent() {
+            Some(parent) => (
+                // Step 16.1: Set document's referrer to the serialization of creator's URL.
+                parent.creator_url().map(|u| String::from(u.as_str())),
+                // Step 16.2: Set document's policy container to a clone of creator's policy container.
+                parent.creator_policy_container(),
+            ),
+            None => (
+                metadata
+                    .referrer
+                    .as_ref()
+                    .map(|referrer| referrer.clone().into_string()),
+                None,
+            ),
+        };
 
+        // Step 15: Let document be a new Document, with:
         let document = Document::new(
             &window,
             HasBrowsingContext::Yes,
@@ -3869,16 +3892,54 @@ impl ScriptThread {
             referrer,
             Some(metadata.status.raw_code()),
             incomplete.canceller,
+            policy_container,
             can_gc,
         );
 
-        let referrer_policy = metadata
-            .headers
-            .as_deref()
-            .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
-            .into();
+        // // Set document's referrer to the serialization of creator's URL.
+        // // Set document's policy container to a clone of creator's policy container.
+        // let (referrer, referrer_policy) = if window_proxy.parent().is_some() {
+        //     (
+        //         window_proxy.creator_url().map(|u| String::from(u.as_str())),
+        //         ReferrerPolicy::Origin,
+        //     )
+        // } else {
+        //     let referrer = metadata
+        //         .referrer
+        //         .as_ref()
+        //         .map(|referrer| referrer.clone().into_string());
 
-        document.set_referrer_policy(referrer_policy);
+        //     let referrer_policy: ReferrerPolicy = metadata
+        //         .headers
+        //         .as_deref()
+        //         .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
+        //         .into();
+
+        //     let alt_referrer_policy = metadata.referrer_policy;
+
+        //     (referrer, referrer_policy)
+        // };
+
+        // Step 17: Assert: document's URL and document's relevant settings object's creation URL
+        // are about:blank.
+
+        // let meta_headers_referrrer_policy: ReferrerPolicy = metadata
+        //     .headers
+        //     .as_deref()
+        //     .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
+        //     .into();
+
+        // let alt_referrer_policy = metadata.referrer_policy;
+        // let policy_container_referrer_policy = metadata.policy_container.get_referrer_policy();
+
+        // warn!(
+        //     "ssssssss meta_headers_referrrer_policy: {:?} alt_referrer_policy {:?} policy_container_referrer_policy {:?}",
+        //     meta_headers_referrrer_policy.clone(),
+        //     alt_referrer_policy,
+        //     policy_container_referrer_policy
+        // );
+
+        // document.set_referrer_policy(metadata.referrer_policy);
         document.set_ready_state(DocumentReadyState::Loading, can_gc);
 
         self.documents

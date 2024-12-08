@@ -47,10 +47,10 @@ impl PolicyContainer {
     }
 
     pub fn get_referrer_policy(&self) -> ReferrerPolicy {
-        // https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-empty-string
-        if self.referrer_policy == ReferrerPolicy::EmptyString {
-            return ReferrerPolicy::default();
-        }
+        // // https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-empty-string
+        // if self.referrer_policy == ReferrerPolicy::EmptyString {
+        //     return ReferrerPolicy::default();
+        // }
 
         self.referrer_policy
     }

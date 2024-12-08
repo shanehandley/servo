@@ -29,6 +29,7 @@ use js::rust::wrappers::{JS_TransplantObject, NewWindowProxy, SetWindowProxy};
 use js::rust::{get_object_class, Handle, MutableHandle, MutableHandleValue};
 use js::JSCLASS_IS_GLOBAL;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
+use net_traits::policy_container::{self, PolicyContainer};
 use net_traits::request::Referrer;
 use script_traits::{
     AuxiliaryBrowsingContextLoadInfo, HistoryEntryReplacement, LoadData, LoadOrigin, NewLayoutInfo,
@@ -124,6 +125,10 @@ pub struct WindowProxy {
     /// The creator browsing context's origin.
     #[no_trace]
     creator_origin: Option<ImmutableOrigin>,
+
+    /// The creator browsing context's policy container
+    #[no_trace]
+    creator_policy_container: Option<PolicyContainer>,
 }
 
 impl WindowProxy {
@@ -155,6 +160,7 @@ impl WindowProxy {
             creator_base_url: creator.base_url,
             creator_url: creator.url,
             creator_origin: creator.origin,
+            creator_policy_container: creator.policy_container,
         }
     }
 
@@ -279,26 +285,33 @@ impl WindowProxy {
         }
     }
 
-    // https://html.spec.whatwg.org/multipage/#auxiliary-browsing-context
+    /// <https://html.spec.whatwg.org/multipage/#auxiliary-browsing-context>
     fn create_auxiliary_browsing_context(
         &self,
         name: DOMString,
         noopener: bool,
     ) -> Option<DomRoot<WindowProxy>> {
         let (chan, port) = ipc::channel().unwrap();
+
         let window = self
             .currently_active
             .get()
             .and_then(ScriptThread::find_document)
             .map(|doc| DomRoot::from_ref(doc.window()))
             .unwrap();
+
         let msg = EmbedderMsg::AllowOpeningWebView(chan);
+
         window.send_to_embedder(msg);
+
         if port.recv().unwrap() {
             let new_top_level_browsing_context_id = TopLevelBrowsingContextId::new();
+
             let new_browsing_context_id =
                 BrowsingContextId::from(new_top_level_browsing_context_id);
+
             let new_pipeline_id = PipelineId::new();
+
             let document = self
                 .currently_active
                 .get()
@@ -306,6 +319,7 @@ impl WindowProxy {
                 .expect("A WindowProxy creating an auxiliary to have an active document");
 
             let blank_url = ServoUrl::parse("about:blank").ok().unwrap();
+
             let load_data = LoadData::new(
                 LoadOrigin::Script(document.origin().immutable().clone()),
                 blank_url,
@@ -334,10 +348,17 @@ impl WindowProxy {
             let constellation_msg = ScriptMsg::ScriptNewAuxiliary(load_info);
             window.send_to_constellation(constellation_msg);
             ScriptThread::process_attach_layout(new_layout_info, document.origin().clone());
+
+            // Step 13 of https://html.spec.whatwg.org/multipage/#creating-a-new-browsing-context
+            // Set up a window environment settings object with about:blank, realm execution
+            // context, null, topLevelCreationURL, and topLevelOrigin.
+            // The primary task here is to set the PolicyContainer
+
             // TODO: if noopener is false, copy the sessionStorage storage area of the creator origin.
             // See step 14 of https://html.spec.whatwg.org/multipage/#creating-a-new-browsing-context
             let auxiliary =
                 ScriptThread::find_document(new_pipeline_id).and_then(|doc| doc.browsing_context());
+
             if let Some(proxy) = auxiliary {
                 if name.to_lowercase() != "_blank" {
                     proxy.set_name(name);
@@ -410,6 +431,11 @@ impl WindowProxy {
         self.creator_origin.clone()
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#creator-origin>
+    pub fn creator_policy_container(&self) -> Option<PolicyContainer> {
+        self.creator_policy_container.clone()
+    }
+
     pub fn has_creator_origin(&self) -> bool {
         self.creator_origin.is_some()
     }
@@ -443,6 +469,7 @@ impl WindowProxy {
                             unsafe { GlobalScope::from_context(cx, in_realm_proof) };
                         let creator =
                             CreatorBrowsingContextInfo::from(parent_browsing_context, None);
+
                         WindowProxy::new_dissimilar_origin(
                             &global_to_clone_from,
                             opener_id,
@@ -723,6 +750,9 @@ impl WindowProxy {
 /// active document of that creator browsing context at the time A was created is the creator
 /// Document.
 ///
+///
+/// TODO: PolicyContainer
+///
 /// See: <https://html.spec.whatwg.org/multipage/#creating-browsing-contexts>
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CreatorBrowsingContextInfo {
@@ -734,6 +764,9 @@ pub struct CreatorBrowsingContextInfo {
 
     /// Creator document origin.
     origin: Option<ImmutableOrigin>,
+
+    /// Creator policy container, which may be inherited by a child browsing context
+    policy_container: Option<PolicyContainer>,
 }
 
 impl CreatorBrowsingContextInfo {
@@ -752,11 +785,15 @@ impl CreatorBrowsingContextInfo {
         let origin = creator
             .as_deref()
             .map(|document| document.origin().immutable().clone());
+        let policy_container = creator
+            .as_deref()
+            .map(|document| document.policy_container().to_owned());
 
         CreatorBrowsingContextInfo {
             base_url,
             url,
             origin,
+            policy_container,
         }
     }
 }

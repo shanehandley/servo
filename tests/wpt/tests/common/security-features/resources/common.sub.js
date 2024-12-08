@@ -380,6 +380,10 @@ function wrapResult(server_data) {
  * @return {Promise} The promise for success/error events.
  */
 function requestViaIframe(url, additionalAttributes) {
+  // console.log('ADDITIONAL ATTRIVYTES')
+  // console.log(url)
+  // console.log(Object.keys(additionalAttributes))
+
   const iframe = createElement(
       "iframe",
       Object.assign({"src": url}, additionalAttributes),
