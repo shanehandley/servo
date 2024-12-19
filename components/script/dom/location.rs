@@ -66,6 +66,8 @@ impl Location {
     }
 
     /// Navigate the relevant `Document`'s browsing context.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#navigate>
     pub fn navigate(
         &self,
         url: ServoUrl,
@@ -130,6 +132,7 @@ impl Location {
             referrer_policy,
             None, // Top navigation doesn't inherit secure context
         );
+
         self.window
             .load_url(history_handling, reload_triggered, load_data, can_gc);
     }
