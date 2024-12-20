@@ -497,6 +497,8 @@ pub struct Document {
     visibility_state: Cell<DocumentVisibilityState>,
     /// <https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml>
     status_code: Option<u16>,
+    /// <https://html.spec.whatwg.org/multipage/#is-initial-about:blank>
+    is_initial_about_blank: Cell<bool>,
 }
 
 #[allow(non_snake_case)]
@@ -3245,6 +3247,8 @@ impl Document {
             .unwrap_or(UTF_8);
 
         let has_browsing_context = has_browsing_context == HasBrowsingContext::Yes;
+        let is_initial_about_blank = Cell::new(url.as_str() == "about:blank");
+
         Document {
             node: Node::new_document_node(),
             document_or_shadow_root: DocumentOrShadowRoot::new(window),
@@ -3365,6 +3369,7 @@ impl Document {
             fonts: Default::default(),
             visibility_state: Cell::new(DocumentVisibilityState::Hidden),
             status_code,
+            is_initial_about_blank,
         }
     }
 
@@ -4176,6 +4181,11 @@ impl Document {
         // Step 7 Fire an event named visibilitychange at document, with its bubbles attribute initialized to true.
         self.upcast::<EventTarget>()
             .fire_bubbling_event(atom!("visibilitychange"), can_gc);
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#is-initial-about:blank>
+    pub fn is_initial_about_blank(&self) -> bool {
+        self.is_initial_about_blank.get()
     }
 }
 
@@ -5258,28 +5268,29 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
         _unused2: Option<DOMString>,
         can_gc: CanGc,
     ) -> Fallible<DomRoot<Document>> {
-        // Step 1
+        // Step 1. If document is an XML document, then throw an "InvalidStateError" DOMException
+        // exception.
         if !self.is_html_document() {
             return Err(Error::InvalidState);
         }
 
-        // Step 2
+        // Step 2. If document's throw-on-dynamic-markup-insertion counter is greater than 0, then
+        // throw an "InvalidStateError" DOMException.
         if self.throw_on_dynamic_markup_insertion_counter.get() > 0 {
             return Err(Error::InvalidState);
         }
 
-        // Step 3
+        // Step 3. Let entryDocument be the entry global object's associated Document.
         let entry_responsible_document = GlobalScope::entry().as_window().Document();
 
-        // Step 4
-        // This check is same-origin not same-origin-domain.
-        // https://github.com/whatwg/html/issues/2282
-        // https://github.com/whatwg/html/pull/2288
+        // Step 4. If document's origin is not same origin to entryDocument's origin, then throw a
+        // "SecurityError" DOMException.
         if !self.origin.same_origin(&entry_responsible_document.origin) {
             return Err(Error::Security);
         }
 
-        // Step 5
+        // Step 5. If document has an active parser whose script nesting level is greater than 0,
+        // then return document.
         if self
             .get_current_parser()
             .is_some_and(|parser| parser.is_active())
@@ -5287,12 +5298,12 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
             return Ok(DomRoot::from_ref(self));
         }
 
-        // Step 6
+        // Step 6. Similarly, if document's unload counter is greater than 0, then return document.
         if self.is_prompting_or_unloading() {
             return Ok(DomRoot::from_ref(self));
         }
 
-        // Step 7
+        // Step 7. If document's active parser was aborted is true, then return document.
         if self.active_parser_was_aborted.get() {
             return Ok(DomRoot::from_ref(self));
         }
@@ -5302,7 +5313,8 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
 
         window_from_node(self).set_navigation_start();
 
-        // Step 8
+        // Step 8. If document's node navigable is non-null and document's node navigable's ongoing
+        // navigation is a navigation ID, then stop loading document's node navigable.
         // TODO: https://github.com/servo/servo/issues/21937
         if self.has_browsing_context() {
             // spec says "stop document loading",
@@ -5310,7 +5322,8 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
             self.abort(can_gc);
         }
 
-        // Step 9
+        // Step 9. For each shadow-including inclusive descendant node of document, erase all event
+        // listeners and handlers given node.
         for node in self
             .upcast::<Node>()
             .traverse_preorder(ShadowIncluding::Yes)
@@ -5318,12 +5331,13 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
             node.upcast::<EventTarget>().remove_all_listeners();
         }
 
-        // Step 10
+        // Step 10. If document is the associated Document of document's relevant global object,
+        // then erase all event listeners and handlers given document's relevant global object.
         if self.window.Document() == DomRoot::from_ref(self) {
             self.window.upcast::<EventTarget>().remove_all_listeners();
         }
 
-        // Step 11
+        // Step 11. Replace all with null within document.
         // TODO: https://github.com/servo/servo/issues/21936
         Node::replace_all(None, self.upcast::<Node>());
 
@@ -5332,39 +5346,55 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
         // WPT selection/Document-open.html wants us to not clear it
         // as of Feb 1 2020
 
-        // Step 12
+        // Step 12. If document is fully active, then:
         if self.is_fully_active() {
+            // Step 12.1. Let newURL be a copy of entryDocument's URL.
             let mut new_url = entry_responsible_document.url();
+
+            // Step 12.2. If entryDocument is not document, then set newURL's fragment to null.
             if entry_responsible_document != DomRoot::from_ref(self) {
                 new_url.set_fragment(None);
             }
+
+            // Step 12.3. Run the URL and history update steps with document and newURL.
             // TODO: https://github.com/servo/servo/issues/21939
             self.set_url(new_url);
         }
 
-        // Step 13
+        // Step 13. Set document's is initial about:blank to false.
+        self.is_initial_about_blank.set(false);
+
+        // Step 14. If document's iframe load in progress flag is set, then set document's mute
+        // iframe load flag.
         // TODO: https://github.com/servo/servo/issues/21938
 
-        // Step 14
+        // Step 15: Set document to no-quirks mode.
         self.set_quirks_mode(QuirksMode::NoQuirks);
 
-        // Step 15
+        // Step 16. Create a new HTML parser and associate it with document. This is a
+        // script-created parser (meaning that it can be closed by the document.open() and
+        // document.close() methods, and that the tokenizer will wait for an explicit call to
+        // document.close() before emitting an end-of-file token). The encoding confidence is
+        // irrelevant.
         let resource_threads = self
             .window
             .upcast::<GlobalScope>()
             .resource_threads()
             .clone();
+
         *self.loader.borrow_mut() =
             DocumentLoader::new_with_threads(resource_threads, Some(self.url()));
+
         ServoParser::parse_html_script_input(self, self.url());
 
-        // Step 16
+        // Step 17. Set the insertion point to point at just before the end of the input stream
+        // (which at this point will be empty).
+        // Handled when creating the parser in the previous step
+
+        // Step 18. Update the current document readiness of document to "loading".
         self.ready_state.set(DocumentReadyState::Loading);
 
-        // Step 17
-        // Handled when creating the parser in step 15
-
-        // Step 18
+        // Step 19. Return document.
         Ok(DomRoot::from_ref(self))
     }
 
