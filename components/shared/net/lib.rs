@@ -44,6 +44,7 @@ pub mod pub_domains;
 pub mod quality;
 pub mod request;
 pub mod response;
+pub mod session_history;
 pub mod storage_thread;
 
 /// An implementation of the [Fetch specification](https://fetch.spec.whatwg.org/)

@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use base::cross_process_instant::CrossProcessInstant;
 use canvas_traits::webgl::{self, WebGLContextId, WebGLMsg};
 use chrono::Local;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{self as csp, CspList};
 use cookie::Cookie;
 use cssparser::match_ignore_ascii_case;
@@ -41,7 +42,7 @@ use net_traits::request::RequestBuilder;
 use net_traits::response::HttpsState;
 use net_traits::CookieSource::NonHTTP;
 use net_traits::CoreResourceMsg::{GetCookiesForUrl, SetCookiesForUrl};
-use net_traits::{FetchResponseListener, IpcSend, ReferrerPolicy};
+use net_traits::{FetchResponseListener, IpcSend, ReferrerPolicy, session_history::SessionHistoryEntry};
 use num_traits::ToPrimitive;
 use percent_encoding::percent_decode;
 use profile_traits::ipc as profile_ipc;
@@ -89,7 +90,9 @@ use crate::dom::bindings::codegen::Bindings::HTMLTextAreaElementBinding::HTMLTex
 use crate::dom::bindings::codegen::Bindings::NavigatorBinding::Navigator_Binding::NavigatorMethods;
 use crate::dom::bindings::codegen::Bindings::NodeBinding::NodeMethods;
 use crate::dom::bindings::codegen::Bindings::NodeFilterBinding::NodeFilter;
-use crate::dom::bindings::codegen::Bindings::PerformanceBinding::PerformanceMethods;
+use crate::dom::bindings::codegen::Bindings::PerformanceBinding::{
+    DOMHighResTimeStamp, PerformanceMethods,
+};
 use crate::dom::bindings::codegen::Bindings::ShadowRootBinding::ShadowRootMethods;
 use crate::dom::bindings::codegen::Bindings::TouchBinding::TouchMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::{
@@ -193,6 +196,21 @@ use crate::stylesheet_set::StylesheetSetRef;
 use crate::task::TaskBox;
 use crate::task_source::{TaskSource, TaskSourceName};
 use crate::timers::OneshotTimerCallback;
+
+/// <https://html.spec.whatwg.org/#source-snapshot-params>
+pub struct SourceSnapshotParams {
+    /// true if sourceDocument's relevant global object has transient activation; otherwise false
+    has_transient_activation: bool,
+    /// sourceDocument's active sandboxing flag set
+    sandboxing_flags: SandboxingFlagSet,
+    /// false if sourceDocument's active sandboxing flag set has the sandboxed downloads browsing
+    /// context flag set; otherwise true
+    allows_downloading: bool, // todo
+    /// sourceDocument's relevant settings object
+    fetch_client: bool, // todo
+    /// sourceDocument's policy container
+    source_policy_container: PolicyContainer,
+}
 
 /// The number of times we are allowed to see spurious `requestAnimationFrame()` calls before
 /// falling back to fake ones.
@@ -497,6 +515,10 @@ pub struct Document {
     visibility_state: Cell<DocumentVisibilityState>,
     /// <https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml>
     status_code: Option<u16>,
+    /// <https://html.spec.whatwg.org/multipage/#tn-session-history-entries>
+    #[no_trace]
+    #[ignore_malloc_size_of = "todo"]
+    session_history_entries: DomRefCell<Vec<SessionHistoryEntry>>,
 }
 
 #[allow(non_snake_case)]
@@ -3074,6 +3096,11 @@ impl Document {
             .parse(url)
             .map(ServoUrl::from)
     }
+
+    /// <https://html.spec.whatwg.org/multipage/browsing-the-web.html#getting-session-history-entries>
+    pub fn get_session_history_entries(&self) -> Ref<Vec<SessionHistoryEntry>> {
+        self.session_history_entries.borrow()
+    }
 }
 
 fn is_character_value_key(key: &Key) -> bool {
@@ -3365,6 +3392,7 @@ impl Document {
             fonts: Default::default(),
             visibility_state: Cell::new(DocumentVisibilityState::Hidden),
             status_code,
+            session_history_entries: DomRefCell::new(vec![]),
         }
     }
 
@@ -4176,6 +4204,45 @@ impl Document {
         // Step 7 Fire an event named visibilitychange at document, with its bubbles attribute initialized to true.
         self.upcast::<EventTarget>()
             .fire_bubbling_event(atom!("visibilitychange"), can_gc);
+    }
+
+    /// <https://html.spec.whatwg.org/#transient-activation>
+    ///
+    /// When the current high resolution time given W is greater than or equal to the last
+    /// activation timestamp in W, and less than the last activation timestamp in W plus the
+    /// transient activation duration, then W is said to have transient activation.
+    ///
+    /// This is W's current activation state, indicating whether the user has interacted in W
+    /// recently. This starts with a false value, and remains true for a limited time after
+    /// every activation notification W gets.
+    ///
+    /// The transient activation state is considered expired if it becomes false because the
+    /// transient activation duration time has elapsed since the last user activation. Note that
+    /// it can become false even before the expiry time through an activation consumption.
+    fn has_transient_activation(&self) -> bool {
+        // let time = time::get_time();
+        // let current_time_ms = time.sec * 1000 + time.nsec as i64 / 1000000;
+
+        // <https://html.spec.whatwg.org/#last-activation-timestamp>
+        //
+        // A last activation timestamp, which is either a DOMHighResTimeStamp, positive infinity
+        // (indicating that W has never been activated), or negative infinity (indicating that the
+        // activation has been consumed). Initially positive infinity.
+        false
+    }
+
+    /// <https://html.spec.whatwg.org/#source-snapshot-params>
+    ///
+    /// Used to capture data from a Document initiating a navigation. It is snapshotted at the
+    /// beginning of a navigation and used throughout the navigation's lifetime
+    pub fn snapshot(&self) -> SourceSnapshotParams {
+        return SourceSnapshotParams {
+            has_transient_activation: self.has_transient_activation(),
+            sandboxing_flags: SandboxingFlagSet::empty(),
+            allows_downloading: false,
+            fetch_client: false,
+            source_policy_container: self.policy_container().to_owned(),
+        };
     }
 }
 

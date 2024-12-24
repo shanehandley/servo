@@ -8,6 +8,47 @@ use serde::{Deserialize, Serialize};
 
 use crate::ReferrerPolicy;
 
+/// <https://html.spec.whatwg.org/multipage/browsers.html#embedder-policy-value>
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
+pub enum EmbedderPolicyValue {
+    UnsafeNone,
+    RequireCorp,
+    Credentialless,
+}
+
+impl ToString for EmbedderPolicyValue {
+    fn to_string(&self) -> String {
+        match self {
+            EmbedderPolicyValue::UnsafeNone => "unsafe-none",
+            EmbedderPolicyValue::RequireCorp => "require-corp",
+            EmbedderPolicyValue::Credentialless => "credentialless",
+        }
+        .to_string()
+    }
+}
+
+/// <https://html.spec.whatwg.org/multipage/browsers.html#embedder-policy>
+///
+/// Configures embedding cross-origin resources into the document.
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
+pub struct EmbedderPolicy {
+    value: EmbedderPolicyValue,
+    reporting_endpoint: String,
+    report_only_value: EmbedderPolicyValue,
+    report_only_reporting_endpoint: String,
+}
+
+impl Default for EmbedderPolicy {
+    fn default() -> EmbedderPolicy {
+        EmbedderPolicy {
+            value: EmbedderPolicyValue::UnsafeNone,
+            reporting_endpoint: String::new(),
+            report_only_value: EmbedderPolicyValue::UnsafeNone,
+            report_only_reporting_endpoint: String::new(),
+        }
+    }
+}
+
 /// When a policy container is associated with a request, it has an additional state of "Client". As
 /// per the spec:
 ///

@@ -84,6 +84,7 @@ use webrender_traits::CrossProcessCompositorApi;
 
 use super::bindings::codegen::Bindings::MessagePortBinding::StructuredSerializeOptions;
 use super::bindings::trace::HashMapTracedValues;
+use super::types::Navigation;
 use crate::dom::bindings::cell::{DomRefCell, Ref};
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
     DocumentMethods, DocumentReadyState,
@@ -219,6 +220,7 @@ pub struct Window {
     window_proxy: MutNullableDom<WindowProxy>,
     document: MutNullableDom<Document>,
     location: MutNullableDom<Location>,
+    navigation: MutNullableDom<Navigation>,
     history: MutNullableDom<History>,
     custom_element_registry: MutNullableDom<CustomElementRegistry>,
     performance: MutNullableDom<Performance>,
@@ -851,6 +853,10 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
     // https://html.spec.whatwg.org/multipage/#dom-location
     fn Location(&self) -> DomRoot<Location> {
         self.location.or_init(|| Location::new(self))
+    }
+
+    fn Navigation(&self) -> DomRoot<Navigation> {
+        self.navigation.or_init(|| Navigation::new(self))
     }
 
     // https://html.spec.whatwg.org/multipage/#dom-sessionstorage
@@ -2758,6 +2764,7 @@ impl Window {
             image_cache,
             navigator: Default::default(),
             location: Default::default(),
+            navigation: Default::default(),
             history: Default::default(),
             custom_element_registry: Default::default(),
             window_proxy: Default::default(),
