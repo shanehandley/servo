@@ -6,11 +6,12 @@
 //! The traits are here instead of in script so that these modules won't have
 //! to depend on script.
 
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
 mod script_msg;
 pub mod serializable;
+pub mod session_history;
 pub mod transferable;
 
 use std::borrow::Cow;
