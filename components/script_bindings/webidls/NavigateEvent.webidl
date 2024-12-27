@@ -13,13 +13,14 @@ interface NavigateEvent : Event {
   readonly attribute boolean canIntercept;
   readonly attribute boolean userInitiated;
   readonly attribute boolean hashChange;
-  readonly attribute AbortSignal signal;
+//   readonly attribute AbortSignal signal;
   readonly attribute FormData? formData;
   readonly attribute DOMString? downloadRequest;
   readonly attribute any info;
   readonly attribute boolean hasUAVisualTransition;
-
+  [Throws]
   undefined intercept(optional NavigationInterceptOptions options = {});
+  [Throws]
   undefined scroll();
 };
 
@@ -29,7 +30,7 @@ dictionary NavigateEventInit : EventInit {
   boolean canIntercept = false;
   boolean userInitiated = false;
   boolean hashChange = false;
-  required AbortSignal signal;
+//   required AbortSignal signal;
   FormData? formData = null;
   DOMString? downloadRequest = null;
   any info;

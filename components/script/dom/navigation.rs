@@ -16,9 +16,7 @@ use crate::dom::bindings::codegen::Bindings::NavigationBinding::{
     NavigationUpdateCurrentEntryOptions, NavigationMethods, NavigationNavigateOptions,
     NavigationResult, NavigationOptions, NavigationReloadOptions
 };
-use crate::dom::bindings::codegen::Bindings::NavigationCurrentEntryChangeEventBinding::{
-    NavigationCurrentEntryChangeEventInit,
-};
+use crate::dom::bindings::codegen::Bindings::NavigationCurrentEntryChangeEventBinding::NavigationCurrentEntryChangeEventInit;
 use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::
     NavigationHistoryEntry_Binding::NavigationHistoryEntryMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
@@ -91,6 +89,7 @@ pub struct Navigation {
     current_entry_index: Option<usize>,
     /// https://html.spec.whatwg.org/multipage/nav-history-apis.html#ongoing-navigate-event
     ongoing_event: Option<NavigateEvent>,
+    // transition: Option<NavigationTransition>,
     focus_changed: bool,
     suppress_scroll: bool,
     #[no_trace]
@@ -256,7 +255,7 @@ impl Navigation {
 
         // Step 11. Let sourceSnapshotParams be the result of snapshotting source snapshot params
         // given document.
-        let _snapshot_params = navigable.snapshot();
+        // let _snapshot_params = navigable.snapshot();
 
         // Step 12. Append the following session history traversal steps to traversable:
         // Step 12.1. Let navigableSHEs be the result of getting session history entries given
