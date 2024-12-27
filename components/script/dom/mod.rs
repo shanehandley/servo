@@ -446,6 +446,7 @@ pub mod navigationcurrententrychangeevent;
 pub mod navigationdestination;
 pub mod navigationhistoryentry;
 pub mod navigationpreloadmanager;
+pub mod navigationtransition;
 pub mod navigator;
 pub mod navigatorinfo;
 pub mod node;
