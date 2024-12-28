@@ -132,6 +132,7 @@ use crate::dom::location::Location;
 use crate::dom::mediaquerylist::{MediaQueryList, MediaQueryListMatchState};
 use crate::dom::mediaquerylistevent::MediaQueryListEvent;
 use crate::dom::messageevent::MessageEvent;
+use crate::dom::navigation::Navigation;
 use crate::dom::navigator::Navigator;
 use crate::dom::node::{from_untrusted_node_address, Node, NodeDamage, NodeTraits};
 use crate::dom::performance::Performance;
@@ -225,6 +226,7 @@ pub(crate) struct Window {
     #[no_trace]
     #[conditional_malloc_size_of]
     font_context: Arc<FontContext>,
+    navigation: MutNullableDom<Navigation>,
     navigator: MutNullableDom<Navigator>,
     #[ignore_malloc_size_of = "Arc"]
     #[no_trace]
@@ -958,6 +960,11 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
         }
         // Step 7.
         Some(DomRoot::from_ref(container))
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation>
+    fn Navigation(&self) -> DomRoot<Navigation> {
+        self.navigation.or_init(|| Navigation::new(self))
     }
 
     // https://html.spec.whatwg.org/multipage/#dom-navigator
@@ -2811,6 +2818,7 @@ impl Window {
             font_context,
             image_cache_sender,
             image_cache,
+            navigation: Default::default(),
             navigator: Default::default(),
             location: Default::default(),
             history: Default::default(),

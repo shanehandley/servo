@@ -2,13 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use std::rc::Rc;
+
 use dom_struct::dom_struct;
 use net_traits::session_history::SessionHistoryEntry;
 
+use crate::dom::bindings::codegen::Bindings::EventHandlerBinding::EventHandlerNonNull;
 use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::NavigationHistoryEntryMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
-use crate::dom::bindings::reflector::{reflect_dom_object_with_proto, DomObject, Reflector};
-use crate::dom::bindings::root::{Dom, DomRoot};
+use crate::dom::bindings::reflector::DomObject;
+use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::{DOMString, USVString};
 use crate::dom::document::Document;
 use crate::dom::eventtarget::EventTarget;
@@ -87,30 +90,17 @@ impl NavigationHistoryEntryMethods<crate::DomTypeHolder> for NavigationHistoryEn
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-navigationhistoryentry-getstate>
-    fn GetState(&self, cx: crate::script_runtime::JSContext, rval: js::gc::MutableHandleValue) {
+    fn GetState(&self, _cx: crate::script_runtime::JSContext, _rval: js::gc::MutableHandleValue) {
         todo!()
     }
 
     /// <https://html.spec.whatwg.org/multipage/#handler-navigationhistoryentry-ondispose>
-    fn GetOndispose(
-        &self,
-    ) -> Option<
-        std::rc::Rc<
-            crate::dom::bindings::codegen::Bindings::EventHandlerBinding::EventHandlerNonNull,
-        >,
-    > {
+    fn GetOndispose(&self) -> Option<Rc<EventHandlerNonNull>> {
         todo!()
     }
 
     /// <https://html.spec.whatwg.org/multipage/#handler-navigationhistoryentry-ondispose>
-    fn SetOndispose(
-        &self,
-        value: Option<
-            std::rc::Rc<
-                super::bindings::codegen::Bindings::EventHandlerBinding::EventHandlerNonNull,
-            >,
-        >,
-    ) {
+    fn SetOndispose(&self, _value: Option<Rc<EventHandlerNonNull>>) {
         todo!()
     }
 }

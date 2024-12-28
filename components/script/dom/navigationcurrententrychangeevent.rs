@@ -76,7 +76,7 @@ impl NavigationCurrentEntryChangeEventMethods<crate::DomTypeHolder>
     for NavigationCurrentEntryChangeEvent
 {
     /// <https://html.spec.whatwg.org/multipage/#dom-navigationcurrententrychangeevent-from>
-    fn From(&self) -> super::bindings::root::DomRoot<NavigationHistoryEntry> {
+    fn From(&self) -> DomRoot<NavigationHistoryEntry> {
         self.from.clone()
     }
 

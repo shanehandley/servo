@@ -69,7 +69,8 @@ impl NavigationDestinationMethods<crate::DomTypeHolder> for NavigationDestinatio
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-navigationdestination-getstate>
-    fn GetState(&self, cx: JSContext, rval: MutableHandleValue) {
+    fn GetState(&self, _cx: JSContext, _rval: MutableHandleValue) {
+        // The getState() method steps are to return StructuredDeserialize(this's state).
         todo!()
     }
 }
