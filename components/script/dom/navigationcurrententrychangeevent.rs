@@ -75,16 +75,19 @@ impl NavigationCurrentEntryChangeEvent {
 impl NavigationCurrentEntryChangeEventMethods<crate::DomTypeHolder>
     for NavigationCurrentEntryChangeEvent
 {
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigationcurrententrychangeevent-from>
     fn From(&self) -> super::bindings::root::DomRoot<NavigationHistoryEntry> {
         self.from.clone()
     }
 
-    fn IsTrusted(&self) -> bool {
-        self.upcast::<Event>().IsTrusted()
-    }
-
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigationcurrententrychangeevent-navigationtype>
     fn GetNavigationType(&self) -> Option<NavigationType> {
         self.navigation_type.clone()
+    }
+
+    /// <https://dom.spec.whatwg.org/#dom-event-istrusted>
+    fn IsTrusted(&self) -> bool {
+        self.upcast::<Event>().IsTrusted()
     }
 
     fn Constructor(

@@ -109,6 +109,7 @@ pub(crate) enum ScriptThreadEventCategory {
     HistoryEvent,
     ImageCacheMsg,
     InputEvent,
+    NavigationEvent,
     NetworkEvent,
     PortMessage,
     Rendering,
@@ -170,6 +171,7 @@ impl From<ScriptThreadEventCategory> for ProfilerCategory {
             ScriptThreadEventCategory::WorkletEvent => ProfilerCategory::ScriptWorkletEvent,
             #[cfg(feature = "webgpu")]
             ScriptThreadEventCategory::WebGPUMsg => ProfilerCategory::ScriptWebGPUMsg,
+            ScriptThreadEventCategory::NavigationEvent => ProfilerCategory::ScriptNavigationEvent,
         }
     }
 }
@@ -214,6 +216,7 @@ impl From<ScriptThreadEventCategory> for ScriptHangAnnotation {
             ScriptThreadEventCategory::PortMessage => ScriptHangAnnotation::PortMessage,
             #[cfg(feature = "webgpu")]
             ScriptThreadEventCategory::WebGPUMsg => ScriptHangAnnotation::WebGPUMsg,
+            ScriptThreadEventCategory::NavigationEvent => ScriptHangAnnotation::NavigationEvent,
         }
     }
 }
