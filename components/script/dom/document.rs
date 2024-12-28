@@ -19,6 +19,7 @@ use base::cross_process_instant::CrossProcessInstant;
 use base::id::WebViewId;
 use canvas_traits::webgl::{self, WebGLContextId, WebGLMsg};
 use chrono::Local;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{self as csp, CspList, PolicyDisposition};
 use cookie::Cookie;
 use cssparser::match_ignore_ascii_case;
@@ -45,7 +46,7 @@ use net_traits::policy_container::PolicyContainer;
 use net_traits::pub_domains::is_pub_domain;
 use net_traits::request::{InsecureRequestsPolicy, RequestBuilder};
 use net_traits::response::HttpsState;
-use net_traits::session_history::{DocumentId, SessionHistoryEntry};
+use net_traits::session_history::{DocumentId, SessionHistoryEntry, SessionHistoryEntryStep};
 use net_traits::CookieSource::NonHTTP;
 use net_traits::CoreResourceMsg::{GetCookiesForUrl, SetCookiesForUrl};
 use net_traits::{FetchResponseListener, IpcSend, ReferrerPolicy};
@@ -95,6 +96,7 @@ use crate::dom::bindings::codegen::Bindings::EventBinding::Event_Binding::EventM
 use crate::dom::bindings::codegen::Bindings::HTMLIFrameElementBinding::HTMLIFrameElement_Binding::HTMLIFrameElementMethods;
 use crate::dom::bindings::codegen::Bindings::HTMLInputElementBinding::HTMLInputElementMethods;
 use crate::dom::bindings::codegen::Bindings::HTMLTextAreaElementBinding::HTMLTextAreaElementMethods;
+use crate::dom::bindings::codegen::Bindings::NavigationBinding::NavigationType;
 use crate::dom::bindings::codegen::Bindings::NavigatorBinding::Navigator_Binding::NavigatorMethods;
 use crate::dom::bindings::codegen::Bindings::NodeBinding::NodeMethods;
 use crate::dom::bindings::codegen::Bindings::NodeFilterBinding::NodeFilter;
@@ -414,6 +416,10 @@ pub(crate) struct Document {
     ignore_destructive_writes_counter: Cell<u32>,
     /// <https://html.spec.whatwg.org/multipage/#ignore-opens-during-unload-counter>
     ignore_opens_during_unload_counter: Cell<u32>,
+    /// Used to ignore certain operations while the below algorithms run. Initially set to zero.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#unload-counter>
+    unload_counter: Cell<u32>,
     /// The number of spurious `requestAnimationFrame()` requests we've received.
     ///
     /// A rAF request is considered spurious if nothing was actually reflowed.
@@ -3469,6 +3475,125 @@ impl Document {
         // implement the Permissions Policy specification.
         true
     }
+
+    /// NavigationApi
+    /// <https://html.spec.whatwg.org/multipage/#apply-the-history-step>
+    pub fn apply_history_step(
+        &self,
+        step: usize,
+        // check_for_cancellation: bool // TODO
+        source_snapshot_params: Option<SourceSnapshotParams>,
+        navigationType: Option<NavigationType>,
+    ) -> HistoryApplicationResult {
+        // Step 1. Assert: This is running within traversable's session history traversal queue.
+        // TODO
+
+        // Step 2. Let targetStep be the result of getting the used step given traversable and step.
+        let target_step = self.get_the_used_step(step);
+
+        // Step 3. If initiatorToCheck is not null, then:
+        // TODO
+
+        // Step 4. Let navigablesCrossingDocuments be the result of getting all navigables that
+        // might experience a cross-document traversal given traversable and targetStep.
+        // https://html.spec.whatwg.org/multipage/browsing-the-web.html#getting-all-navigables-that-might-experience-a-cross-document-traversal
+
+        // Step 5. If checkForCancelation is true, and the result of checking if unloading is
+        // canceled given navigablesCrossingDocuments, traversable, targetStep, and userInvolvement
+        // is not "continue", then return that result.
+        // https://html.spec.whatwg.org/multipage/browsing-the-web.html#checking-if-unloading-is-canceled
+
+        // Step 6. Let changingNavigables be the result of get all navigables whose current session
+        // history entry will change or reload given traversable and targetStep.
+        // https://html.spec.whatwg.org/multipage/browsing-the-web.html#get-all-navigables-whose-current-session-history-entry-will-change-or-reload
+
+        // Step 7. Let nonchangingNavigablesThatStillNeedUpdates be the result of getting all
+        // navigables that only need history object length/index update given traversable and
+        // targetStep.
+        // https://html.spec.whatwg.org/multipage/browsing-the-web.html#getting-all-navigables-that-only-need-history-object-length/index-update
+
+        // Step 8. For each navigable of changingNavigables:
+        // Step 8.1. Let targetEntry be the result of getting the target history entry given
+        // navigable and targetStep.
+        let target_entry = self.get_the_target_history_entry(step);
+
+        // Step 8.2. Set navigable's current session history entry to targetEntry.
+        if let Some(proxy) = self.browsing_context() {
+            // proxy.set_current_history_entry(target_entry);
+        }
+
+        // Step 8.3. Set the ongoing navigation for navigable to "traversal".
+
+        // Step 9. Let totalChangeJobs be the size of changingNavigables.
+        let total_changed_jobs = 1;
+
+        // TODO
+
+        HistoryApplicationResult::Applied
+    }
+
+    /// NavigationApi
+    /// <https://html.spec.whatwg.org/multipage/#getting-the-used-step>
+    fn get_the_used_step(&self, step: usize) -> usize {
+        // Step 1. Let steps be the result of getting all used history steps within traversable.
+        let steps = self.get_all_used_history_steps();
+
+        // Step 2. Return the greatest item in steps that is less than or equal to step.
+        // steps.iter().find(|step_entry| {
+        //     match step_entry {
+        //         &SessionHistoryEntryStep::Integer(i) => *i == step,
+        //         _ => false
+        //     }
+        // })
+
+        step
+    }
+
+    /// NavigationApi
+    /// <https://html.spec.whatwg.org/multipage/#getting-all-used-history-steps>
+    fn get_all_used_history_steps(&self) -> Vec<SessionHistoryEntryStep> {
+        // Step 2.1.1. Assert: this is running within traversable's session history traversal queue.
+        // TODO
+
+        // Step 2. Let steps be an empty ordered set of non-negative integers.
+        let mut steps: Vec<SessionHistoryEntryStep> = vec![];
+
+        // Step 3. Let entryLists be the ordered set « traversable's session history entries ».
+        let entry_list: Vec<SessionHistoryEntry> = self.get_session_history_entries();
+
+        for entry in entry_list.iter() {
+            // Append entry's step to steps.
+            steps.push(entry.step.clone());
+
+            // For each nestedHistory of entry's document state's nested histories, append
+            // nestedHistory's entries list to entryLists.
+            // TODO
+        }
+
+        // Step 5. Return steps, sorted.
+        // TODO
+        steps
+    }
+
+    /// NavigationAPI
+    /// https://html.spec.whatwg.org/multipage/#getting-the-target-history-entry
+    fn get_the_target_history_entry(&self, step: usize) -> SessionHistoryEntry {
+        // Step 1. Let entries be the result of getting session history entries for navigable.
+        let entries = self.get_session_history_entries();
+
+        // Step 2. Return the item in entries that has the greatest step less than or equal to step.
+        let target_entry = entries.iter().filter(|entry| {
+            match entry.step {
+                SessionHistoryEntryStep::Integer(i) => i <= step,
+                _ => false
+            }
+        }).last();
+
+        match target_entry {
+            Some(entry) => entry.clone(),
+            _ => SessionHistoryEntry::default()
+        }
+    }
 }
 
 fn is_character_value_key(key: &Key) -> bool {
@@ -3725,6 +3850,7 @@ impl Document {
             last_click_info: DomRefCell::new(None),
             ignore_destructive_writes_counter: Default::default(),
             ignore_opens_during_unload_counter: Default::default(),
+            unload_counter: Cell::new(0),
             spurious_animation_frames: Cell::new(0),
             dom_count: Cell::new(1),
             fullscreen_element: MutNullableDom::new(None),
@@ -4629,6 +4755,16 @@ impl Document {
     /// Returns the internal unique id for this document
     pub fn get_id(&self) -> DocumentId {
         self.id.clone()
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#unload-counter>
+    pub fn increase_unload_counter(&self) {
+        self.unload_counter.set(self.unload_counter.get() + 1);
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#unload-counter>
+    pub fn get_unload_counter_value(&self) -> u32 {
+        self.unload_counter.get()
     }
 
     /// <https://html.spec.whatwg.org/multipage/#getting-session-history-entries>
@@ -6276,4 +6412,34 @@ impl DocumentHelpers<crate::DomTypeHolder> for Document {
     fn ensure_safe_to_run_script_or_layout(&self) {
         Document::ensure_safe_to_run_script_or_layout(self)
     }
+}
+
+/// <https://html.spec.whatwg.org/multipage/#source-snapshot-params>
+pub struct SourceSnapshotParams {
+    has_transient_activation: bool,
+    sandboxing_flags: SandboxingFlagSet,
+    allows_downloading: bool,
+    source_policy_container: PolicyContainer,
+}
+
+impl SourceSnapshotParams {
+    /// <https://html.spec.whatwg.org/multipage/#snapshotting-source-snapshot-params>
+    pub fn snapshot(document: &Document) -> Self {
+        SourceSnapshotParams {
+            has_transient_activation: false,
+            sandboxing_flags: SandboxingFlagSet::empty(),
+            allows_downloading: false, // TODO implement in CSP crate
+            source_policy_container: document.policy_container().to_owned(),
+        }
+    }
+}
+
+/// The result of applying a history step to a navigable
+///
+/// <https://html.spec.whatwg.org/multipage/#apply-the-traverse-history-step>
+pub enum HistoryApplicationResult {
+    InitiatorDisallowed,
+    CancelledByBeforeUnload,
+    CancelledByNavigate,
+    Applied,
 }

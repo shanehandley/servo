@@ -5,9 +5,11 @@
 use std::rc::Rc;
 use std::cmp::Eq;
 use indexmap::IndexMap;
-use ipc_channel::ipc;
-use net_traits::CoreResourceMsg;
+use net_traits::session_history::{SessionHistoryEntry, SessionHistoryEntryStep};
+// use ipc_channel::ipc;
+// use net_traits::CoreResourceMsg;
 use servo_atoms::Atom;
+// use uuid::Uuid;
 
 use dom_struct::dom_struct;
 use servo_url::{ImmutableOrigin, ServoUrl};
@@ -24,12 +26,13 @@ use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
 use crate::dom::bindings::codegen::Bindings::EventBinding::EventInit;
 use crate::dom::bindings::error::{Error, Fallible};
-use crate::dom::bindings::refcounted::Trusted;
+// use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::bindings::reflector::{DomObject, reflect_dom_object};
-use crate::dom::bindings::inheritance::Castable;
+// use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::{DOMString, USVString};
 use crate::dom::bindings::trace::RootedTraceableBox;
+use crate::dom::document::{HistoryApplicationResult, SourceSnapshotParams};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::navigateevent::NavigateEvent;
@@ -41,7 +44,7 @@ use crate::dom::promise::Promise;
 use crate::dom::window::Window;
 use crate::script_runtime::CanGc;
 
-/// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigation-api-method-tracker>
+/// <https://html.spec.whatwg.org/multipage/#navigation-api-method-tracker>
 #[derive(Clone, MallocSizeOf)]
 struct NavigationApiMethodTracker {
     key: Option<String>,
@@ -63,7 +66,6 @@ impl PartialEq for NavigationApiMethodTracker {
 }
 
 impl NavigationApiMethodTracker {
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#maybe-set-the-upcoming-non-traverse-api-method-tracker>
     pub fn new(
         global: &GlobalScope,
         // info: JSValue,
@@ -144,8 +146,7 @@ impl Navigation {
         }
 
         // Step 3: If document's is initial about:blank is true, then return true.
-        if document.url().as_str() == "about:blank" {
-            // TODO is_initial_about_blank
+        if document.is_initial_about_blank() {
             return true;
         }
 
@@ -197,7 +198,7 @@ impl Navigation {
     fn perform_a_navigation_api_traversal(
         &self,
         key: DOMString,
-        options: Option<RootedTraceableBox<NavigationOptions>>,
+        _options: Option<RootedTraceableBox<NavigationOptions>>,
     ) -> NavigationResult {
         // Step 1. Let document be navigation's relevant global object's associated Document.
         let document = &self.window.Document();
@@ -210,7 +211,9 @@ impl Navigation {
 
         // Step 3. If document's unload counter is greater than 0, then return an early error result
         // for an "InvalidStateError" DOMException.
-        // TODO
+        if document.get_unload_counter_value() > 0 {
+            return self.early_error_result(Error::InvalidState);
+        }
 
         // Step 4. Let current be the current entry of navigation.
         let current_entry = self.GetCurrentEntry();
@@ -251,31 +254,67 @@ impl Navigation {
 
         // Step 8. Let apiMethodTracker be the result of adding an upcoming traverse API method
         // tracker for navigation given key and info.
-        let api_method_tracker = self.add_an_upcoming_traverse_api_method_tracker(stringified_key);
+        let api_method_tracker =
+            self.add_an_upcoming_traverse_api_method_tracker(stringified_key.clone());
 
         // Step 9. Let navigable be document's node navigable
         // Step 10. Let traversable be navigable's traversable navigable.
-        let navigable = document;
+        // TODO assuming document
 
         // Step 11. Let sourceSnapshotParams be the result of snapshotting source snapshot params
         // given document.
-        // let _snapshot_params = navigable.snapshot();
+        let source_snapshot_params = SourceSnapshotParams::snapshot(&document);
 
         // Step 12. Append the following session history traversal steps to traversable:
         // Step 12.1. Let navigableSHEs be the result of getting session history entries given
         // navigable.
-        let navigable_shes = document.get_session_history_entries().to_owned();
+        let navigable_shes: Vec<SessionHistoryEntry> =
+            document.get_session_history_entries().to_owned();
 
         // Step 12. Let targetSHE be the session history entry in navigableSHEs whose navigation API
         // key is key. If no such entry exists, then:
+        let target_she = navigable_shes
+            .iter()
+            .find(|ref entry| entry.navigation_api_key().as_bytes() == stringified_key.as_bytes())
+            .unwrap(); // TODO
 
-        // Step 12.2.1. Queue a global task on the navigation and traversal task source given
-        // navigation's relevant global object to reject the finished promise for apiMethodTracker
-        // with an "InvalidStateError" DOMException.
-        let (task_source, canceller) = self
-            .window
-            .task_manager()
-            .navigation_and_traversal_task_source_with_canceller();
+        let browsing_context = match document.browsing_context() {
+            Some(bc) => bc,
+            None => {
+                return self.early_error_result(Error::InvalidState);
+            },
+        };
+
+        // Step 12.3. If targetSHE is navigable's active session history entry, then abort these
+        // steps.
+        if browsing_context.is_active_session_history_entry(&target_she) {
+            return self.early_error_result(Error::InvalidState);
+        }
+
+        // Step 12.4. Let result be the result of applying the traverse history step given by
+        // targetSHE's step to traversable, given sourceSnapshotParams, navigable, and "none".
+        let step = match target_she.step {
+            SessionHistoryEntryStep::Integer(i) => i,
+            _ => {
+                return self.early_error_result(Error::InvalidState);
+            }
+        };
+
+        let result = document.apply_history_step(step, Some(source_snapshot_params), None);
+
+        match result {
+            // Step 12.5. If result is "canceled-by-beforeunload", then queue a global task on the
+            // navigation and traversal task source given navigation's relevant global object to
+            // reject the finished promise for apiMethodTracker with a new "AbortError" DOMException
+            // created in navigation's relevant realm.
+            HistoryApplicationResult::CancelledByBeforeUnload => {},
+            // Step 12.6. If result is "initiator-disallowed", then queue a global task on the
+            // navigation and traversal task source given navigation's relevant global object to
+            // reject the finished promise for apiMethodTracker with a new "SecurityError"
+            // DOMException created in navigation's relevant realm.
+            HistoryApplicationResult::InitiatorDisallowed => {},
+            _ => {}
+        }
 
         // Step 13. Return a navigation API method tracker-derived result for apiMethodTracker.
         self.method_tracker_derived_result(api_method_tracker)
@@ -316,6 +355,8 @@ impl Navigation {
         api_method_tracker.unwrap()
     }
 
+    /// TODO: Account for the additional arguments 
+    ///
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#maybe-set-the-upcoming-non-traverse-api-method-tracker>
     fn maybe_set_the_upcoming_non_traverse_api_method_tracker(&self) -> NavigationApiMethodTracker {
         // Step 1. Let committedPromise and finishedPromise be new promises created in navigation's
@@ -383,7 +424,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-updatecurrententry>
     fn UpdateCurrentEntry(
         &self,
-        options: RootedTraceableBox<NavigationUpdateCurrentEntryOptions>,
+        _options: RootedTraceableBox<NavigationUpdateCurrentEntryOptions>,
     ) -> Fallible<()> {
         // Step 1. Let current be the current entry of this.
         let current = self.GetCurrentEntry();
@@ -409,7 +450,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
             from: current.unwrap(),
         };
 
-        let event = NavigationCurrentEntryChangeEvent::new(
+        let _event = NavigationCurrentEntryChangeEvent::new(
             &self.window,
             None,
             Atom::from("currententrychange"),
@@ -458,7 +499,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         // return false.
         // Step 4. Return true.
         match self.current_entry_index {
-            Some(idx) => idx < self.entry_list.len(),
+            Some(idx) => idx == self.entry_list.len() - 1,
             _ => false,
         }
     }
@@ -469,16 +510,18 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         url: USVString,
         options: RootedTraceableBox<NavigationNavigateOptions>,
     ) -> NavigationResult {
-        // Step 1. Let urlRecord be the result of parsing a URL given url, relative to this's relevant settings object.
-        let url_record = match ServoUrl::parse(&url.0) {
+        // Step 3. Let document be this's relevant global object's associated Document.
+        // Note: Done early to correctly parse the URL with a base
+        let document = &self.window.Document();
+
+        // Step 1. Let urlRecord be the result of parsing a URL given url, relative to this's
+        // relevant settings object.
+        let url_record = match ServoUrl::parse_with_base(Some(&document.url()), &url.0) {
             Ok(url) => url,
             // Step 2. If urlRecord is failure, then return an early error result for a
             // "SyntaxError" DOMException.
             Err(_) => return self.early_error_result(Error::Syntax),
         };
-
-        // Step 3. Let document be this's relevant global object's associated Document.
-        let document = &self.window.Document();
 
         // Step 4. If options["history"] is "push", and the navigation must be a replace given
         // urlRecord and document, then return an early error result for a "NotSupportedError"
@@ -490,7 +533,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         }
 
         // Step 5. Let state be options["state"], if it exists; otherwise, undefined.
-        let state = options.state.handle();
+        let _state = options.state.handle();
 
         // Step 6. Let serializedState be StructuredSerializeForStorage(state). If this throws an
         // exception, then return an early error result for that exception.
@@ -504,6 +547,9 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
 
         // Step 8. If document's unload counter is greater than 0, then return an early error result
         // for an "InvalidStateError" DOMException.
+        if document.get_unload_counter_value() > 0 {
+            return self.early_error_result(Error::InvalidState);
+        }
 
         // Step 9. Let info be options["info"], if it exists; otherwise, undefined.
 
@@ -539,7 +585,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-reload>
     fn Reload(
         &self,
-        options: RootedTraceableBox<NavigationReloadOptions>,
+        _options: RootedTraceableBox<NavigationReloadOptions>,
     ) -> Fallible<NavigationResult> {
         // Step 1. Let document be this's relevant global object's associated Document.
         let document = &self.window.Document();
@@ -570,7 +616,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-traverseto>
     fn TraverseTo(
         &self,
-        key: DOMString,
+        _key: DOMString,
         options: RootedTraceableBox<NavigationOptions>,
     ) -> NavigationResult {
         // Step 1. If this's current entry index is −1, then return an early error result for an
@@ -598,15 +644,18 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-back>
     fn Back(&self, options: RootedTraceableBox<NavigationOptions>) -> NavigationResult {
-        // Step 1
         match self.current_entry_index {
             None => self.early_error_result(Error::InvalidState),
+            // Step 1, If this's current entry index is −1 or 0, then return an early error result
+            // for an "InvalidStateError" DOMException.
             Some(i) if i < 1 => self.early_error_result(Error::InvalidState),
             Some(i) => {
-                // Step 2
+                // Step 2. Let key be this's entry list[this's current entry index − 1]'s session
+                // history entry's navigation API key. 
                 match self.entry_list.get(i - 1) {
                     Some(entry) => {
-                        // Step 3
+                        // Step 3. Return the result of performing a navigation API traversal given
+                        // this, key, and options.
                         self.perform_a_navigation_api_traversal(entry.Key(), Some(options))
                     },
                     None => self.early_error_result(Error::InvalidState),
@@ -645,7 +694,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     }
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigatesuccess>
-    fn SetOnnavigatesuccess(&self, value: Option<Rc<EventHandlerNonNull>>) {}
+    fn SetOnnavigatesuccess(&self, _value: Option<Rc<EventHandlerNonNull>>) {}
 
     // error_event_handler!(onnavigateerror, GetOnnavigateerror, SetOnnavigateerror)
 
@@ -655,7 +704,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     }
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigateerror>
-    fn SetOnnavigateerror(&self, value: Option<Rc<EventHandlerNonNull>>) {}
+    fn SetOnnavigateerror(&self, _value: Option<Rc<EventHandlerNonNull>>) {}
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-oncurrententrychange>
     fn GetOncurrententrychange(&self) -> Option<Rc<EventHandlerNonNull>> {
@@ -663,5 +712,5 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     }
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-oncurrententrychange>
-    fn SetOncurrententrychange(&self, value: Option<Rc<EventHandlerNonNull>>) {}
+    fn SetOncurrententrychange(&self, _value: Option<Rc<EventHandlerNonNull>>) {}
 }
