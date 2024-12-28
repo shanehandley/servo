@@ -6,8 +6,6 @@ use std::rc::Rc;
 
 use dom_struct::dom_struct;
 use js::gc::HandleObject;
-use js::jsapi::Heap;
-use js::jsval::JSVal;
 use servo_atoms::Atom;
 
 use super::event::EventStatus;
@@ -62,7 +60,7 @@ pub struct NavigateEvent {
 }
 
 impl NavigateEvent {
-    fn new_inherited(init: &NavigateEventInit) -> NavigateEvent {
+    fn new_inherited(init: &RootedTraceableBox<NavigateEventInit>) -> NavigateEvent {
         NavigateEvent {
             event: Event::new_inherited(),
             // info: init.info.clone(),
@@ -85,7 +83,7 @@ impl NavigateEvent {
         window: &Window,
         proto: Option<HandleObject>,
         type_: Atom,
-        init: &NavigateEventInit,
+        init: &RootedTraceableBox<NavigateEventInit>,
         can_gc: CanGc,
     ) -> DomRoot<NavigateEvent> {
         let ev = reflect_dom_object_with_proto(
@@ -97,7 +95,9 @@ impl NavigateEvent {
 
         {
             let event = ev.upcast::<Event>();
-            event.init_event(type_, init.parent.bubbles, init.parent.cancelable);
+            let parent = &init.parent;
+
+            event.init_event(type_, parent.bubbles, parent.cancelable);
         }
 
         ev
@@ -107,10 +107,12 @@ impl NavigateEvent {
         window: &Window,
         proto: Option<HandleObject>,
         type_: Atom,
-        init: &NavigateEventInit,
+        init: NavigateEventInit,
         can_gc: CanGc,
     ) -> DomRoot<NavigateEvent> {
-        NavigateEvent::new_with_proto(window, proto, type_, init, can_gc)
+        let init = RootedTraceableBox::<NavigateEventInit>::from_box(Box::new(init));
+
+        NavigateEvent::new_with_proto(window, proto, type_, &init, can_gc)
     }
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigateevent-perform-shared-checks>
@@ -145,7 +147,7 @@ impl NavigateEvent {
         // TODO
 
         // Step 2. Set event's interception state to "scrolled".
-        *self.interception_state.borrow_mut() = InterceptionState::Committed;
+        *self.interception_state.borrow_mut() = InterceptionState::Scrolled;
 
         let global = self.global();
         let window = global.as_window();
@@ -324,7 +326,6 @@ impl NavigateEventMethods<crate::DomTypeHolder> for NavigateEvent {
         type_: DOMString,
         init: RootedTraceableBox<NavigateEventInit>,
     ) -> DomRoot<NavigateEvent> {
-        // NavigateEvent::new_with_proto(window, proto, Atom::from(type_), init, can_gc)
-        todo!()
+        NavigateEvent::new_with_proto(window, proto, Atom::from(type_), &init, can_gc)
     }
 }

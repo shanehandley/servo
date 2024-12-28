@@ -39,6 +39,7 @@ use net_traits::policy_container::PolicyContainer;
 use net_traits::pub_domains::is_pub_domain;
 use net_traits::request::RequestBuilder;
 use net_traits::response::HttpsState;
+use net_traits::session_history::{DocumentId, SessionHistoryEntry};
 use net_traits::CookieSource::NonHTTP;
 use net_traits::CoreResourceMsg::{GetCookiesForUrl, SetCookiesForUrl};
 use net_traits::{FetchResponseListener, IpcSend, ReferrerPolicy};
@@ -47,7 +48,6 @@ use percent_encoding::percent_decode;
 use profile_traits::ipc as profile_ipc;
 use profile_traits::time::{TimerMetadata, TimerMetadataFrameType, TimerMetadataReflowType};
 use script_layout_interface::{PendingRestyle, TrustedNodeAddress};
-use script_traits::session_history::SessionHistoryEntry;
 use script_traits::{
     AnimationState, AnimationTickType, CompositorEvent, DocumentActivity, MouseButton,
     MouseEventType, ScriptMsg, TouchEventType, TouchId, UntrustedNodeAddress, WheelDelta,
@@ -264,6 +264,8 @@ pub(crate) type WebGPUContextsMap =
 #[dom_struct]
 pub struct Document {
     node: Node,
+    #[no_trace]
+    id: DocumentId,
     document_or_shadow_root: DocumentOrShadowRoot,
     window: Dom<Window>,
     implementation: MutNullableDom<DOMImplementation>,
@@ -500,6 +502,12 @@ pub struct Document {
     status_code: Option<u16>,
     /// <https://html.spec.whatwg.org/multipage/#is-initial-about:blank>
     is_initial_about_blank: Cell<bool>,
+    /// <https://html.spec.whatwg.org/multipage/#tn-current-session-history-step>
+    current_session_history_step: usize,
+    /// <https://html.spec.whatwg.org/multipage/#tn-session-history-entries>
+    #[no_trace]
+    #[ignore_malloc_size_of = "todo"]
+    session_history_entries: Vec<SessionHistoryEntry>,
 }
 
 #[allow(non_snake_case)]
@@ -3229,6 +3237,7 @@ impl Document {
 
         Document {
             node: Node::new_document_node(),
+            id: DocumentId::next(),
             document_or_shadow_root: DocumentOrShadowRoot::new(window),
             window: Dom::from_ref(window),
             has_browsing_context,
@@ -3348,6 +3357,8 @@ impl Document {
             visibility_state: Cell::new(DocumentVisibilityState::Hidden),
             status_code,
             is_initial_about_blank: Cell::new(is_initial_about_blank),
+            current_session_history_step: 0,
+            session_history_entries: vec![],
         }
     }
 
@@ -4169,6 +4180,35 @@ impl Document {
     /// <https://html.spec.whatwg.org/multipage/#is-initial-about:blank>
     pub fn is_initial_about_blank(&self) -> bool {
         self.is_initial_about_blank.get()
+    }
+
+    /// Returns the internal unique id for this document
+    pub fn get_id(&self) -> DocumentId {
+        self.id.clone()
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#getting-session-history-entries>
+    pub fn get_session_history_entries(&self) -> Vec<SessionHistoryEntry> {
+        // Step 1. Let traversable be navigable's traversable navigable.
+
+        // Step 2. Assert: this is running within traversable's session history traversal queue.
+        // TODO :o https://html.spec.whatwg.org/multipage/document-sequences.html#tn-session-history-traversal-queue
+
+        // Step 3. If navigable is traversable, return traversable's session history entries.
+        self.session_history_entries.clone()
+
+        // Step 4. Let docStates be an empty ordered set of document states.
+
+        // Step 5. For each entry of traversable's session history entries, append entry's document
+        // state to docStates.
+
+        // Step 6. For each docState of docStates:
+        // Step 6.1. For each nestedHistory of docState's nested histories:
+        // Step 6.1.1. If nestedHistory's id equals navigable's id, return nestedHistory's entries.
+        // Step 6.1.2. For each entry of nestedHistory's entries, append entry's document state to
+        // docStates.
+
+        // Step 7. Assert: this step is not reached.
     }
 }
 

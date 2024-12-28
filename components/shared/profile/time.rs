@@ -120,6 +120,7 @@ pub enum ProfilerCategory {
     ScriptHistoryEvent = 0x7c,
     ScriptPortMessage = 0x7d,
     ScriptWebGPUMsg = 0x7e,
+    ScriptNavigationEvent = 0x7f,
 
     /// Web performance metrics.
     TimeToFirstPaint = 0x80,
@@ -134,6 +135,7 @@ impl ProfilerCategory {
     pub const fn variant_name(&self) -> &'static str {
         match self {
             ProfilerCategory::Compositing => "Compositing",
+            ProfilerCategory::ImageSaving => "ImageSaving",
             ProfilerCategory::LayoutPerform => "LayoutPerform",
             ProfilerCategory::LayoutStyleRecalc => "LayoutStyleRecalc",
             ProfilerCategory::LayoutTextShaping => "LayoutTextShaping",
@@ -144,7 +146,7 @@ impl ProfilerCategory {
             ProfilerCategory::LayoutStoreOverflow => "LayoutStoreOverflow",
             ProfilerCategory::LayoutParallelWarmup => "LayoutParallelWarmup",
             ProfilerCategory::LayoutDispListBuild => "LayoutDispListBuild",
-            ProfilerCategory::ImageSaving => "ImageSaving",
+            ProfilerCategory::ScriptNavigationEvent => "ScriptNavigationEvent",
             ProfilerCategory::ScriptAttachLayout => "ScriptAttachLayout",
             ProfilerCategory::ScriptConstellationMsg => "ScriptConstellationMsg",
             ProfilerCategory::ScriptDevtoolsMsg => "ScriptDevtoolsMsg",

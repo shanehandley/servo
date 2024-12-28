@@ -26,6 +26,7 @@ pub enum ScriptHangAnnotation {
     ImageCacheMsg,
     InputEvent,
     HistoryEvent,
+    NavigationEvent,
     NetworkEvent,
     Rendering,
     Resize,
