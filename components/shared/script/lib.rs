@@ -11,7 +11,6 @@
 
 mod script_msg;
 pub mod serializable;
-pub mod session_history;
 pub mod transferable;
 
 use std::borrow::Cow;

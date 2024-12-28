@@ -4,10 +4,11 @@
 
 use dom_struct::dom_struct;
 use servo_url::ServoUrl;
+use js::rust::MutableHandleValue;
 
 use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::NavigationHistoryEntry_Binding::NavigationHistoryEntryMethods;
 use crate::dom::bindings::codegen::Bindings::NavigationDestinationBinding::NavigationDestinationMethods;
-use crate::dom::bindings::reflector::{reflect_dom_object_with_proto, DomObject, Reflector};
+use crate::dom::bindings::reflector::Reflector;
 use crate::dom::bindings::str::{DOMString, USVString};
 use crate::script_runtime::JSContext;
 
@@ -23,9 +24,8 @@ pub struct NavigationDestination {
     id: DOMString,
     same_document: bool,
     entry: Option<NavigationHistoryEntry>,
+    state: String, // TODO Each NavigationDestination has a state, which is a serialized state.
 }
-
-impl NavigationDestination {}
 
 impl NavigationDestinationMethods<crate::DomTypeHolder> for NavigationDestination {
     /// <https://html.spec.whatwg.org/multipage/#dom-navigationdestination-url>
@@ -43,19 +43,33 @@ impl NavigationDestinationMethods<crate::DomTypeHolder> for NavigationDestinatio
         }
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigationdestination-id>
     fn Id(&self) -> DOMString {
-        self.id.clone()
+        match &self.entry {
+            // Step 1. If this's entry is null, then return the empty string.
+            None => DOMString::new(),
+            // Step 2. Return this's entry's ID.
+            Some(history_entry) => history_entry.Id(),
+        }
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigationdestination-index>
     fn Index(&self) -> i64 {
-        todo!()
+        match &self.entry {
+            // Step 1. If this's entry is null, then return -1
+            None => -1,
+            // Step 2. Return this's entry's index.
+            Some(history_entry) => history_entry.Index(),
+        }
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigationdestination-samedocument>
     fn SameDocument(&self) -> bool {
-        false
+        self.same_document
     }
 
-    fn GetState(&self, cx: JSContext, rval: js::gc::MutableHandleValue) {
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigationdestination-getstate>
+    fn GetState(&self, cx: JSContext, rval: MutableHandleValue) {
         todo!()
     }
 }

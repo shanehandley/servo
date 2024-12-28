@@ -45,6 +45,7 @@ use net_traits::policy_container::PolicyContainer;
 use net_traits::pub_domains::is_pub_domain;
 use net_traits::request::{InsecureRequestsPolicy, RequestBuilder};
 use net_traits::response::HttpsState;
+use net_traits::session_history::{DocumentId, SessionHistoryEntry};
 use net_traits::CookieSource::NonHTTP;
 use net_traits::CoreResourceMsg::{GetCookiesForUrl, SetCookiesForUrl};
 use net_traits::{FetchResponseListener, IpcSend, ReferrerPolicy};
@@ -53,7 +54,6 @@ use percent_encoding::percent_decode;
 use profile_traits::ipc as profile_ipc;
 use profile_traits::time::{TimerMetadata, TimerMetadataFrameType, TimerMetadataReflowType};
 use script_layout_interface::{PendingRestyle, TrustedNodeAddress};
-use script_traits::session_history::SessionHistoryEntry;
 use script_traits::{
     AnimationState, AnimationTickType, ConstellationInputEvent, DocumentActivity, ScriptMsg,
 };
@@ -278,6 +278,8 @@ pub(crate) type WebGPUContextsMap =
 #[dom_struct]
 pub(crate) struct Document {
     node: Node,
+    #[no_trace]
+    id: DocumentId,
     document_or_shadow_root: DocumentOrShadowRoot,
     window: Dom<Window>,
     implementation: MutNullableDom<DOMImplementation>,
@@ -519,6 +521,13 @@ pub(crate) struct Document {
     inherited_insecure_requests_policy: Cell<Option<InsecureRequestsPolicy>>,
     /// <https://w3c.github.io/IntersectionObserver/#document-intersectionobservertaskqueued>
     intersection_observer_task_queued: Cell<bool>,
+    /// <https://html.spec.whatwg.org/multipage/#tn-current-session-history-step>
+    /// TODO: Move to Navigable
+    current_session_history_step: usize,
+    /// <https://html.spec.whatwg.org/multipage/#tn-session-history-entries>
+    #[no_trace]
+    #[ignore_malloc_size_of = "todo"]
+    session_history_entries: Vec<SessionHistoryEntry>,
 }
 
 #[allow(non_snake_case)]
@@ -3636,6 +3645,7 @@ impl Document {
 
         Document {
             node: Node::new_document_node(),
+            id: DocumentId::next(),
             document_or_shadow_root: DocumentOrShadowRoot::new(window),
             window: Dom::from_ref(window),
             has_browsing_context,
@@ -3757,6 +3767,8 @@ impl Document {
             is_initial_about_blank: Cell::new(is_initial_about_blank),
             inherited_insecure_requests_policy: Cell::new(inherited_insecure_requests_policy),
             intersection_observer_task_queued: Cell::new(false),
+            current_session_history_step: 0,
+            session_history_entries: vec![],
         }
     }
 
@@ -4612,6 +4624,35 @@ impl Document {
     /// <https://html.spec.whatwg.org/multipage/#is-initial-about:blank>
     pub(crate) fn is_initial_about_blank(&self) -> bool {
         self.is_initial_about_blank.get()
+    }
+
+    /// Returns the internal unique id for this document
+    pub fn get_id(&self) -> DocumentId {
+        self.id.clone()
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#getting-session-history-entries>
+    pub fn get_session_history_entries(&self) -> Vec<SessionHistoryEntry> {
+        // Step 1. Let traversable be navigable's traversable navigable.
+
+        // Step 2. Assert: this is running within traversable's session history traversal queue.
+        // TODO :o https://html.spec.whatwg.org/multipage/document-sequences.html#tn-session-history-traversal-queue
+
+        // Step 3. If navigable is traversable, return traversable's session history entries.
+        self.session_history_entries.clone()
+
+        // Step 4. Let docStates be an empty ordered set of document states.
+
+        // Step 5. For each entry of traversable's session history entries, append entry's document
+        // state to docStates.
+
+        // Step 6. For each docState of docStates:
+        // Step 6.1. For each nestedHistory of docState's nested histories:
+        // Step 6.1.1. If nestedHistory's id equals navigable's id, return nestedHistory's entries.
+        // Step 6.1.2. For each entry of nestedHistory's entries, append entry's document state to
+        // docStates.
+
+        // Step 7. Assert: this step is not reached.
     }
 }
 

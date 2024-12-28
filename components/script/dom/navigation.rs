@@ -5,16 +5,18 @@
 use std::rc::Rc;
 use std::cmp::Eq;
 use indexmap::IndexMap;
+use ipc_channel::ipc;
+use net_traits::CoreResourceMsg;
 use servo_atoms::Atom;
 
 use dom_struct::dom_struct;
-use servo_url::ImmutableOrigin;
+use servo_url::{ImmutableOrigin, ServoUrl};
 
 use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::codegen::Bindings::EventHandlerBinding::EventHandlerNonNull;
 use crate::dom::bindings::codegen::Bindings::NavigationBinding::{
-    NavigationUpdateCurrentEntryOptions, NavigationMethods, NavigationNavigateOptions,
-    NavigationResult, NavigationOptions, NavigationReloadOptions
+    NavigationHistoryBehavior, NavigationUpdateCurrentEntryOptions, NavigationMethods,
+    NavigationNavigateOptions, NavigationResult, NavigationOptions, NavigationReloadOptions
 };
 use crate::dom::bindings::codegen::Bindings::NavigationCurrentEntryChangeEventBinding::NavigationCurrentEntryChangeEventInit;
 use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::
@@ -22,7 +24,9 @@ use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
 use crate::dom::bindings::codegen::Bindings::EventBinding::EventInit;
 use crate::dom::bindings::error::{Error, Fallible};
+use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::bindings::reflector::{DomObject, reflect_dom_object};
+use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::{DOMString, USVString};
 use crate::dom::bindings::trace::RootedTraceableBox;
@@ -260,7 +264,7 @@ impl Navigation {
         // Step 12. Append the following session history traversal steps to traversable:
         // Step 12.1. Let navigableSHEs be the result of getting session history entries given
         // navigable.
-        // let navigable_shes = document.get_session_history_entries().to_owned();
+        let navigable_shes = document.get_session_history_entries().to_owned();
 
         // Step 12. Let targetSHE be the session history entry in navigableSHEs whose navigation API
         // key is key. If no such entry exists, then:
@@ -268,6 +272,10 @@ impl Navigation {
         // Step 12.2.1. Queue a global task on the navigation and traversal task source given
         // navigation's relevant global object to reject the finished promise for apiMethodTracker
         // with an "InvalidStateError" DOMException.
+        let (task_source, canceller) = self
+            .window
+            .task_manager()
+            .navigation_and_traversal_task_source_with_canceller();
 
         // Step 13. Return a navigation API method tracker-derived result for apiMethodTracker.
         self.method_tracker_derived_result(api_method_tracker)
@@ -461,9 +469,70 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         url: USVString,
         options: RootedTraceableBox<NavigationNavigateOptions>,
     ) -> NavigationResult {
-        // Step 1
+        // Step 1. Let urlRecord be the result of parsing a URL given url, relative to this's relevant settings object.
+        let url_record = match ServoUrl::parse(&url.0) {
+            Ok(url) => url,
+            // Step 2. If urlRecord is failure, then return an early error result for a
+            // "SyntaxError" DOMException.
+            Err(_) => return self.early_error_result(Error::Syntax),
+        };
 
-        // Step 2
+        // Step 3. Let document be this's relevant global object's associated Document.
+        let document = &self.window.Document();
+
+        // Step 4. If options["history"] is "push", and the navigation must be a replace given
+        // urlRecord and document, then return an early error result for a "NotSupportedError"
+        // DOMException.
+        if options.history == NavigationHistoryBehavior::Push &&
+            (url_record.scheme() == "javascript" || document.is_initial_about_blank())
+        {
+            return self.early_error_result(Error::NotSupported);
+        }
+
+        // Step 5. Let state be options["state"], if it exists; otherwise, undefined.
+        let state = options.state.handle();
+
+        // Step 6. Let serializedState be StructuredSerializeForStorage(state). If this throws an
+        // exception, then return an early error result for that exception.
+        // TODO
+
+        // Step 7. If document is not fully active, then return an early error result for an
+        // "InvalidStateError" DOMException.
+        if !document.is_fully_active() {
+            return self.early_error_result(Error::InvalidState);
+        }
+
+        // Step 8. If document's unload counter is greater than 0, then return an early error result
+        // for an "InvalidStateError" DOMException.
+
+        // Step 9. Let info be options["info"], if it exists; otherwise, undefined.
+
+        // Step 10. Let apiMethodTracker be the result of maybe setting the upcoming non-traverse
+        // API method tracker for this given info and serializedState.
+
+        // Step 11. Navigate document's node navigable to urlRecord using document, with
+        // historyHandling set to options["history"] and navigationAPIState set to serializedState.
+        // let this = Trusted::new(self);
+        // let window = Trusted::new(&self.window);
+        // let task = task!(navigate: move || {
+        //     if generation_id != this.root().generation_id.get() {
+        //         return;
+        //     }
+        //     window
+        //         .root()
+        //         .load_url(
+        //             options.history,
+        //             false,
+        //             load_data,
+        //             CanGc::note(),
+        //         );
+        // });
+
+        // Step 12. If this's upcoming non-traverse API method tracker is apiMethodTracker, then:
+        // TODO
+
+        // Step 13. Return a navigation API method tracker-derived result for apiMethodTracker.
+        // TODO
         self.early_error_result(Error::Syntax)
     }
 

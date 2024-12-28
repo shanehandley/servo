@@ -34,6 +34,7 @@ function test_interfaces(interfaceNamesInGlobalScope) {
       "MessageChannel",
       "MessagePort",
       "NaN",
+      "Navigation",
       "Notification",
       "Number",
       "Object",

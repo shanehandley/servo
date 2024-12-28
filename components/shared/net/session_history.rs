@@ -1,14 +1,42 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use malloc_size_of_derive::MallocSizeOf;
+use serde::{Deserialize, Serialize};
 use servo_url::ServoUrl;
 
+use crate::ReferrerPolicy;
+
+/// Rather than actually copy a document into DocumentState, store a unique identifier to match it
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
+pub struct DocumentId(usize);
+
+impl DocumentId {
+    pub fn next() -> Self {
+        static NEXT_REQUEST_ID: AtomicUsize = AtomicUsize::new(0);
+        Self(NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+impl Default for DocumentId {
+    fn default() -> Self {
+        DocumentId::next()
+    }
+}
+
 /// <https://html.spec.whatwg.org/multipage/#document-state-2>
-#[derive(Debug, Default)]
-pub struct SessionHistoryEntryDocumentState {
-    /// todo
+#[derive(Clone, Debug, Default)]
+pub struct DocumentState {
+    pub document_id: DocumentId,
+    pub document_referrer_policy: ReferrerPolicy,
     pub reload_pending: bool,
 }
 
 /// <https://html.spec.whatwg.org/multipage/browsing-the-web.html#she-step>
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub enum SessionHistoryEntryStep {
     #[default]
     /// The initial state
@@ -18,7 +46,7 @@ pub enum SessionHistoryEntryStep {
 }
 
 /// <https://html.spec.whatwg.org/multipage/#scroll-restoration-mode>
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub enum ScrollRestorationMode {
     /// The user agent is responsible for restoring the scroll position upon navigation.
     #[default]
@@ -29,11 +57,11 @@ pub enum ScrollRestorationMode {
 }
 
 /// <https://html.spec.whatwg.org/multipage/#session-history-entry>
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SessionHistoryEntry {
     step: SessionHistoryEntryStep,
     url: ServoUrl,
-    document_state: SessionHistoryEntryDocumentState,
+    document_state: DocumentState,
     scroll_restoration_mode: ScrollRestorationMode,
 }
 
