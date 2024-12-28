@@ -30,6 +30,7 @@ use js::rust::{get_object_class, Handle, MutableHandle, MutableHandleValue};
 use js::JSCLASS_IS_GLOBAL;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use net_traits::request::Referrer;
+use net_traits::session_history::SessionHistoryEntry;
 use script_traits::{
     AuxiliaryBrowsingContextLoadInfo, LoadData, LoadOrigin, NavigationHistoryBehavior,
     NewLayoutInfo, ScriptMsg,
@@ -124,6 +125,22 @@ pub struct WindowProxy {
     /// The creator browsing context's origin.
     #[no_trace]
     creator_origin: Option<ImmutableOrigin>,
+
+    /// <https://html.spec.whatwg.org/multipage/#tn-current-session-history-step>
+    current_session_history_step: usize,
+
+    /// <https://html.spec.whatwg.org/multipage/#tn-session-history-entries>
+    #[no_trace]
+    #[ignore_malloc_size_of = "todo"]
+    session_history_entries: Vec<SessionHistoryEntry>,
+
+    #[no_trace]
+    #[ignore_malloc_size_of = "todo"]
+    /// TODO: This can only be modified from the event loop of the active session history entry's
+    /// document.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#nav-active-history-entry>
+    active_session_history_entry: SessionHistoryEntry,
 }
 
 impl WindowProxy {
@@ -155,6 +172,9 @@ impl WindowProxy {
             creator_base_url: creator.base_url,
             creator_url: creator.url,
             creator_origin: creator.origin,
+            current_session_history_step: 0,
+            session_history_entries: vec![],
+            active_session_history_entry: SessionHistoryEntry::default(),
         }
     }
 
@@ -711,6 +731,10 @@ impl WindowProxy {
 
     pub fn set_name(&self, name: DOMString) {
         *self.name.borrow_mut() = name;
+    }
+
+    pub fn is_active_session_history_entry(&self, other: &SessionHistoryEntry) -> bool {
+        &self.active_session_history_entry == other
     }
 }
 

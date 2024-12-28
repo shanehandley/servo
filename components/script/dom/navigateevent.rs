@@ -78,7 +78,6 @@ impl NavigateEvent {
         }
     }
 
-    // TODO: init: RootedTraceableBox<NavigateEventInit>
     fn new_with_proto(
         window: &Window,
         proto: Option<HandleObject>,
@@ -107,11 +106,9 @@ impl NavigateEvent {
         window: &Window,
         proto: Option<HandleObject>,
         type_: Atom,
-        init: NavigateEventInit,
+        init: RootedTraceableBox<NavigateEventInit>,
         can_gc: CanGc,
     ) -> DomRoot<NavigateEvent> {
-        let init = RootedTraceableBox::<NavigateEventInit>::from_box(Box::new(init));
-
         NavigateEvent::new_with_proto(window, proto, type_, &init, can_gc)
     }
 
@@ -144,7 +141,7 @@ impl NavigateEvent {
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#process-scroll-behavior>
     fn process_scroll_behavior(&self) {
         // Step 1. Assert: event's interception state is "committed".
-        // TODO
+        // debug_assert_eq!(self.interception_state(), InterceptionState::Committed);
 
         // Step 2. Set event's interception state to "scrolled".
         *self.interception_state.borrow_mut() = InterceptionState::Scrolled;
@@ -228,7 +225,7 @@ impl NavigateEventMethods<crate::DomTypeHolder> for NavigateEvent {
     /// API.
     ///
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-info>
-    fn Info(&self, cx: crate::script_runtime::JSContext, retval: js::gc::MutableHandleValue) {
+    fn Info(&self, _cx: crate::script_runtime::JSContext, _retval: js::gc::MutableHandleValue) {
         todo!()
     }
 

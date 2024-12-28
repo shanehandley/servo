@@ -15,6 +15,7 @@
   [PutForwards=href, LegacyUnforgeable, CrossOriginReadable, CrossOriginWritable]
     readonly attribute Location location;
   readonly attribute History history;
+  readonly attribute Navigation navigation;
   [Pref="dom.customelements.enabled"]
   readonly attribute CustomElementRegistry customElements;
   //[Replaceable] readonly attribute BarProp locationbar;

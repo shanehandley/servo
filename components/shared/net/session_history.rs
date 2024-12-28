@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use malloc_size_of_derive::MallocSizeOf;
 use serde::{Deserialize, Serialize};
 use servo_url::ServoUrl;
+use uuid::Uuid;
 
 use crate::ReferrerPolicy;
 
@@ -58,11 +59,19 @@ pub enum ScrollRestorationMode {
 
 /// <https://html.spec.whatwg.org/multipage/#session-history-entry>
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct SessionHistoryEntry {
-    step: SessionHistoryEntryStep,
+    pub step: SessionHistoryEntryStep,
     url: ServoUrl,
-    document_state: DocumentState,
+    pub document_state: DocumentState,
+    navigation_api_key: Uuid,
     scroll_restoration_mode: ScrollRestorationMode,
+}
+
+impl SessionHistoryEntry {
+    pub fn navigation_api_key(&self) -> Uuid {
+        self.navigation_api_key.clone()
+    }
 }
 
 impl Default for SessionHistoryEntry {
@@ -71,7 +80,14 @@ impl Default for SessionHistoryEntry {
             step: Default::default(),
             url: ServoUrl::parse("about:blank").unwrap(),
             document_state: Default::default(),
+            navigation_api_key: Uuid::new_v4(),
             scroll_restoration_mode: ScrollRestorationMode::Auto,
         }
+    }
+}
+
+impl PartialEq for SessionHistoryEntry {
+    fn eq(&self, other: &SessionHistoryEntry) -> bool {
+        self.navigation_api_key == other.navigation_api_key
     }
 }
