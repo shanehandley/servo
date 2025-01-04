@@ -6,7 +6,9 @@ use std::rc::Rc;
 
 use dom_struct::dom_struct;
 use net_traits::session_history::SessionHistoryEntry;
+use net_traits::ReferrerPolicy;
 
+use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::codegen::Bindings::EventHandlerBinding::EventHandlerNonNull;
 use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::NavigationHistoryEntryMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
@@ -15,6 +17,7 @@ use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::{DOMString, USVString};
 use crate::dom::document::Document;
 use crate::dom::eventtarget::EventTarget;
+use crate::script_runtime::JSContext;
 
 /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigationhistoryentry>
 #[dom_struct]
@@ -26,7 +29,7 @@ pub struct NavigationHistoryEntry {
     index: i64,
     #[no_trace]
     #[ignore_malloc_size_of = "todo"]
-    session_history_entry: SessionHistoryEntry,
+    session_history_entry: DomRefCell<SessionHistoryEntry>,
 }
 
 impl NavigationHistoryEntry {
@@ -50,9 +53,18 @@ impl NavigationHistoryEntryMethods<crate::DomTypeHolder> for NavigationHistoryEn
         }
 
         // Step 3. Let she be this's session history entry.
+        let she = &self.session_history_entry.borrow();
 
         // Step 4. If she's document does not equal document, and she's document state's request
         // referrer policy is "no-referrer" or "origin", then return null.
+        if she.document_state.document_id != document.id() &&
+            matches!(
+                she.document_state.document_referrer_policy,
+                ReferrerPolicy::NoReferrer | ReferrerPolicy::Origin
+            )
+        {
+            return None;
+        }
 
         // Return she's URL, serialized.
         self.url.clone()
@@ -85,12 +97,13 @@ impl NavigationHistoryEntryMethods<crate::DomTypeHolder> for NavigationHistoryEn
 
         // Step 3. Return true if this's session history entry's document equals document, and false
         // otherwise.
+        let she = &self.session_history_entry.borrow();
 
-        todo!()
+        she.document_state.document_id == document.id()
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-navigationhistoryentry-getstate>
-    fn GetState(&self, _cx: crate::script_runtime::JSContext, _rval: js::gc::MutableHandleValue) {
+    fn GetState(&self, _cx: JSContext, _rval: js::gc::MutableHandleValue) {
         todo!()
     }
 

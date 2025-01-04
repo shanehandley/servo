@@ -5,14 +5,14 @@
 use dom_struct::dom_struct;
 use servo_url::ServoUrl;
 use js::rust::MutableHandleValue;
+use script_traits::StructuredSerializedData;
 
 use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::NavigationHistoryEntry_Binding::NavigationHistoryEntryMethods;
 use crate::dom::bindings::codegen::Bindings::NavigationDestinationBinding::NavigationDestinationMethods;
-use crate::dom::bindings::reflector::Reflector;
+use crate::dom::bindings::reflector::{DomObject, Reflector};
 use crate::dom::bindings::str::{DOMString, USVString};
+use crate::dom::navigationhistoryentry::NavigationHistoryEntry;
 use crate::script_runtime::JSContext;
-
-use super::navigationhistoryentry::NavigationHistoryEntry;
 
 /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-navigationdestination-interface>
 #[dom_struct]
@@ -24,7 +24,8 @@ pub struct NavigationDestination {
     id: DOMString,
     same_document: bool,
     entry: Option<NavigationHistoryEntry>,
-    state: String, // TODO Each NavigationDestination has a state, which is a serialized state.
+    #[no_trace]
+    state: StructuredSerializedData,
 }
 
 impl NavigationDestinationMethods<crate::DomTypeHolder> for NavigationDestination {
@@ -68,9 +69,20 @@ impl NavigationDestinationMethods<crate::DomTypeHolder> for NavigationDestinatio
         self.same_document
     }
 
+    /// The getState() method steps are to return StructuredDeserialize(this's state).
+    ///
     /// <https://html.spec.whatwg.org/multipage/#dom-navigationdestination-getstate>
     fn GetState(&self, _cx: JSContext, _rval: MutableHandleValue) {
-        // The getState() method steps are to return StructuredDeserialize(this's state).
         todo!()
+
+        // let data = StructuredSerializedData {
+        //     serialized: self.state.serialized.clone(),
+        //     ports: None,
+        //     blobs: None,
+        // };
+
+        // if let Ok(data) = structuredclone::read(&self.global(), data, _rval) {
+        // } else {
+        // }
     }
 }

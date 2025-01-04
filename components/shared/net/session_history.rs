@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use core::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use malloc_size_of_derive::MallocSizeOf;
@@ -9,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use servo_url::ServoUrl;
 use uuid::Uuid;
 
+// use script_traits::StructuredSerializedData;
 use crate::ReferrerPolicy;
 
 /// Rather than actually copy a document into DocumentState, store a unique identifier to match it
@@ -63,6 +65,7 @@ pub enum ScrollRestorationMode {
 pub struct SessionHistoryEntry {
     pub step: SessionHistoryEntryStep,
     url: ServoUrl,
+    // navigation_api_state: Cell<StructuredSerializedData>,
     pub document_state: DocumentState,
     navigation_api_key: Uuid,
     scroll_restoration_mode: ScrollRestorationMode,
@@ -72,6 +75,10 @@ impl SessionHistoryEntry {
     pub fn navigation_api_key(&self) -> Uuid {
         self.navigation_api_key.clone()
     }
+
+    // pub fn set_navigation_api_state(&self, state: StructuredSerializedData) {
+
+    // }
 }
 
 impl Default for SessionHistoryEntry {
