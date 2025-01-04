@@ -3177,16 +3177,17 @@ impl Document {
         let entries = self.get_session_history_entries();
 
         // Step 2. Return the item in entries that has the greatest step less than or equal to step.
-        let target_entry = entries.iter().filter(|entry| {
-            match entry.step {
+        let target_entry = entries
+            .iter()
+            .filter(|entry| match entry.step {
                 SessionHistoryEntryStep::Integer(i) => i <= step,
-                _ => false
-            }
-        }).last();
+                _ => false,
+            })
+            .last();
 
         match target_entry {
             Some(entry) => entry.clone(),
-            _ => SessionHistoryEntry::default()
+            _ => SessionHistoryEntry::default(),
         }
     }
 }
@@ -4347,6 +4348,10 @@ impl Document {
         // docStates.
 
         // Step 7. Assert: this step is not reached.
+    }
+
+    pub fn id(&self) -> DocumentId {
+        self.id.clone()
     }
 }
 

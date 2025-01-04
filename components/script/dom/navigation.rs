@@ -2,14 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use core::fmt::Debug;
 use std::rc::Rc;
 use std::cmp::Eq;
 use indexmap::IndexMap;
 use net_traits::session_history::{SessionHistoryEntry, SessionHistoryEntryStep};
-// use ipc_channel::ipc;
-// use net_traits::CoreResourceMsg;
+// use script_traits::StructuredSerializedData;
 use servo_atoms::Atom;
-// use uuid::Uuid;
+use js::jsapi::Heap;
+use js::jsapi::JSObject;
+// use js::jsval::{JSVal, NullValue, UndefinedValue};
 
 use dom_struct::dom_struct;
 use servo_url::{ImmutableOrigin, ServoUrl};
@@ -26,11 +28,10 @@ use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
 use crate::dom::bindings::codegen::Bindings::EventBinding::EventInit;
 use crate::dom::bindings::error::{Error, Fallible};
-// use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::bindings::reflector::{DomObject, reflect_dom_object};
-// use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::{DOMString, USVString};
+use crate::dom::bindings::structuredclone;
 use crate::dom::bindings::trace::RootedTraceableBox;
 use crate::dom::document::{HistoryApplicationResult, SourceSnapshotParams};
 use crate::dom::eventtarget::EventTarget;
@@ -48,14 +49,24 @@ use crate::script_runtime::CanGc;
 #[derive(Clone, MallocSizeOf)]
 struct NavigationApiMethodTracker {
     key: Option<String>,
-    // #[ignore_malloc_size_of = "jsvalues are hard"]
-    // info: JSValue,
-    state: Option<String>, // TODO
+    // #[ignore_malloc_size_of = "mozjs"]
+    // info: Heap<JSVal>,
+    // #[no_trace]
+    // state: Option<StructuredSerializedData>,
+    state: Option<String>,
     committed_to_entry: Option<DomRoot<NavigationHistoryEntry>>,
     #[ignore_malloc_size_of = "promises are hard"]
     committed_promise: Rc<Promise>,
     #[ignore_malloc_size_of = "promises are hard"]
     finished_promise: Rc<Promise>,
+}
+
+impl Debug for NavigationApiMethodTracker {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("NavigationApiMethodTracker")
+            .field("key", &self.key)
+            .finish()
+    }
 }
 
 impl Eq for NavigationApiMethodTracker {}
@@ -68,12 +79,14 @@ impl PartialEq for NavigationApiMethodTracker {
 impl NavigationApiMethodTracker {
     pub fn new(
         global: &GlobalScope,
-        // info: JSValue,
         state: Option<String>,
         committed_promise: Option<Rc<Promise>>,
         finished_promise: Option<Rc<Promise>>,
         can_gc: CanGc,
     ) -> NavigationApiMethodTracker {
+        // let info = Heap::default();
+        // info.set(NullValue());
+
         NavigationApiMethodTracker {
             key: None,
             // info,
@@ -86,16 +99,19 @@ impl NavigationApiMethodTracker {
 }
 
 #[dom_struct]
+/// <https://html.spec.whatwg.org/multipage/#navigation>
 pub struct Navigation {
     event_target: EventTarget,
     window: Dom<Window>,
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigation-entry-list>
+    /// <https://html.spec.whatwg.org/multipage/#navigation-entry-list>
     entry_list: Vec<DomRoot<NavigationHistoryEntry>>,
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigation-current-entry-index>
+    /// <https://html.spec.whatwg.org/multipage/#navigation-current-entry-index>
     current_entry_index: Option<usize>,
-    /// https://html.spec.whatwg.org/multipage/nav-history-apis.html#ongoing-navigate-event
+    /// https://html.spec.whatwg.org/multipage/#ongoing-navigate-event
     ongoing_event: Option<NavigateEvent>,
-    // transition: Option<NavigationTransition>,
+    transition: Option<DomRoot<NavigationTransition>>,
+    /// https://html.spec.whatwg.org/multipage/#navigation-activation
+    activation: Option<DomRoot<NavigationActivation>>,
     focus_changed: bool,
     suppress_scroll: bool,
     #[no_trace]
@@ -127,6 +143,8 @@ impl Navigation {
             entry_list: vec![],
             current_entry_index: None,
             ongoing_event: None,
+            transition: None,
+            activation: None,
             focus_changed: false,
             suppress_scroll: false,
             ongoing_method_tracker: None,
@@ -297,7 +315,7 @@ impl Navigation {
             SessionHistoryEntryStep::Integer(i) => i,
             _ => {
                 return self.early_error_result(Error::InvalidState);
-            }
+            },
         };
 
         let result = document.apply_history_step(step, Some(source_snapshot_params), None);
@@ -313,7 +331,7 @@ impl Navigation {
             // reject the finished promise for apiMethodTracker with a new "SecurityError"
             // DOMException created in navigation's relevant realm.
             HistoryApplicationResult::InitiatorDisallowed => {},
-            _ => {}
+            _ => {},
         }
 
         // Step 13. Return a navigation API method tracker-derived result for apiMethodTracker.
@@ -355,7 +373,7 @@ impl Navigation {
         api_method_tracker.unwrap()
     }
 
-    /// TODO: Account for the additional arguments 
+    /// TODO: Account for the additional arguments
     ///
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#maybe-set-the-upcoming-non-traverse-api-method-tracker>
     fn maybe_set_the_upcoming_non_traverse_api_method_tracker(&self) -> NavigationApiMethodTracker {
@@ -424,7 +442,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-updatecurrententry>
     fn UpdateCurrentEntry(
         &self,
-        _options: RootedTraceableBox<NavigationUpdateCurrentEntryOptions>,
+        options: RootedTraceableBox<NavigationUpdateCurrentEntryOptions>,
     ) -> Fallible<()> {
         // Step 1. Let current be the current entry of this.
         let current = self.GetCurrentEntry();
@@ -436,7 +454,9 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
 
         // Step 3. Let serializedState be StructuredSerializeForStorage(options["state"]),
         // rethrowing any exceptions.
-        // TODO
+        let cx = GlobalScope::get_cx();
+
+        let serialized_state = structuredclone::write(cx, options.state.handle(), None)?;
 
         // Step 4. Set current's session history entry's navigation API state to serializedState.
         // TODO
@@ -461,15 +481,17 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         Ok(())
     }
 
+    /// <https://html.spec.whatwg.org/multipage/dom-navigation-transition>
     fn GetTransition(&self) -> Option<DomRoot<NavigationTransition>> {
-        None
+        self.transition.clone()
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-activation>
     fn GetActivation(&self) -> Option<DomRoot<NavigationActivation>> {
-        None
+        self.activation.clone()
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-cangoback>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-cangoback>
     fn CanGoBack(&self) -> bool {
         // Step 1. If this has entries and events disabled, then return false.
         if self.has_entries_and_events_disabled() {
@@ -555,6 +577,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
 
         // Step 10. Let apiMethodTracker be the result of maybe setting the upcoming non-traverse
         // API method tracker for this given info and serializedState.
+        let api_method_tracker = self.maybe_set_the_upcoming_non_traverse_api_method_tracker();
 
         // Step 11. Navigate document's node navigable to urlRecord using document, with
         // historyHandling set to options["history"] and navigationAPIState set to serializedState.
@@ -575,11 +598,16 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         // });
 
         // Step 12. If this's upcoming non-traverse API method tracker is apiMethodTracker, then:
-        // TODO
+        // If the upcoming non-traverse API method tracker is still apiMethodTracker, this means
+        // that the navigate algorithm bailed out before ever getting to the inner navigate
+        // event firing algorithm which would promote that upcoming API method tracker to
+        // ongoing.
+        // Step 12.1. Set this's upcoming non-traverse API method tracker to null.
+
+        // Step 12.2. Return an early error result for an "AbortError" DOMException.
 
         // Step 13. Return a navigation API method tracker-derived result for apiMethodTracker.
-        // TODO
-        self.early_error_result(Error::Syntax)
+        self.method_tracker_derived_result(api_method_tracker)
     }
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-reload>
@@ -651,7 +679,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
             Some(i) if i < 1 => self.early_error_result(Error::InvalidState),
             Some(i) => {
                 // Step 2. Let key be this's entry list[this's current entry index − 1]'s session
-                // history entry's navigation API key. 
+                // history entry's navigation API key.
                 match self.entry_list.get(i - 1) {
                     Some(entry) => {
                         // Step 3. Return the result of performing a navigation API traversal given
