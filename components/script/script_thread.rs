@@ -1627,8 +1627,13 @@ impl ScriptThread {
                     f
                 ),
                 ScriptThreadEventCategory::NavigationEvent => {
-                    time_profile!(ProfilerCategory::ScriptNavigationEvent, None, profiler_chan, f)
-                }
+                    time_profile!(
+                        ProfilerCategory::ScriptNavigationEvent,
+                        None,
+                        profiler_chan,
+                        f
+                    )
+                },
                 ScriptThreadEventCategory::NetworkEvent => {
                     time_profile!(ProfilerCategory::ScriptNetworkEvent, None, profiler_chan, f)
                 },
