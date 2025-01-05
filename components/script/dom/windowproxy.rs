@@ -11,6 +11,7 @@ use embedder_traits::EmbedderMsg;
 use html5ever::local_name;
 use indexmap::map::IndexMap;
 use ipc_channel::ipc;
+use js::gc::HandleValue;
 use js::glue::{
     CreateWrapperProxyHandler, DeleteWrapperProxyHandler, GetProxyPrivate, GetProxyReservedSlot,
     ProxyTraps, SetProxyReservedSlot,
@@ -30,7 +31,7 @@ use js::rust::{get_object_class, Handle, MutableHandle, MutableHandleValue};
 use js::JSCLASS_IS_GLOBAL;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use net_traits::request::Referrer;
-use net_traits::session_history::SessionHistoryEntry;
+use script_traits::session_history::SessionHistoryEntry;
 use script_traits::{
     AuxiliaryBrowsingContextLoadInfo, LoadData, LoadOrigin, NavigationHistoryBehavior,
     NewLayoutInfo, ScriptMsg,
@@ -39,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use servo_url::{ImmutableOrigin, ServoUrl};
 use style::attr::parse_integer;
 
+use super::bindings::structuredclone;
 use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::conversions::{root_from_handleobject, ToJSValConvertible};
 use crate::dom::bindings::error::{throw_dom_exception, Error, Fallible};
@@ -156,6 +158,11 @@ impl WindowProxy {
         let name = frame_element.map_or(DOMString::new(), |e| {
             e.get_string_attribute(&local_name!("name"))
         });
+
+        let cx = GlobalScope::get_cx();
+        let navigation_api_state =
+            structuredclone::write(cx, HandleValue::null(), None).expect("Failed to build state");
+
         WindowProxy {
             reflector: Reflector::new(),
             browsing_context_id,
@@ -174,7 +181,7 @@ impl WindowProxy {
             creator_origin: creator.origin,
             current_session_history_step: 0,
             session_history_entries: vec![],
-            active_session_history_entry: SessionHistoryEntry::default(),
+            active_session_history_entry: SessionHistoryEntry::new(navigation_api_state),
         }
     }
 
