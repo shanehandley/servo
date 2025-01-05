@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::PortMessageTask;
 
-#[derive(Debug, Deserialize, MallocSizeOf, Serialize)]
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
 enum MessagePortState {
     /// <https://html.spec.whatwg.org/multipage/#detached>
     Detached,
@@ -29,7 +29,7 @@ enum MessagePortState {
     Disabled(bool),
 }
 
-#[derive(Debug, Deserialize, MallocSizeOf, Serialize)]
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
 /// The data and logic backing the DOM managed MessagePort.
 pub struct MessagePortImpl {
     /// The current state of the port.

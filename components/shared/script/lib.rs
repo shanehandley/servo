@@ -11,6 +11,7 @@
 
 mod script_msg;
 pub mod serializable;
+pub mod session_history;
 pub mod transferable;
 pub mod webdriver_msg;
 
@@ -809,7 +810,7 @@ impl ScriptToConstellationChan {
 
 /// A data-holder for serialized data and transferred objects.
 /// <https://html.spec.whatwg.org/multipage/#structuredserializewithtransfer>
-#[derive(Debug, Deserialize, MallocSizeOf, Serialize)]
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
 pub struct StructuredSerializedData {
     /// Data serialized by SpiderMonkey.
     pub serialized: Vec<u8>,
@@ -862,7 +863,7 @@ impl StructuredSerializedData {
 }
 
 /// A task on the <https://html.spec.whatwg.org/multipage/#port-message-queue>
-#[derive(Debug, Deserialize, MallocSizeOf, Serialize)]
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
 pub struct PortMessageTask {
     /// The origin of this task.
     pub origin: ImmutableOrigin,

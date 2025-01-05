@@ -6,11 +6,12 @@ use core::fmt::Debug;
 use std::rc::Rc;
 use std::cmp::Eq;
 use indexmap::IndexMap;
-use net_traits::session_history::{SessionHistoryEntry, SessionHistoryEntryStep};
-// use script_traits::StructuredSerializedData;
+use script_traits::session_history::{SessionHistoryEntry, SessionHistoryEntryStep};
+use script_traits::StructuredSerializedData;
 use servo_atoms::Atom;
-use js::jsapi::Heap;
-use js::jsapi::JSObject;
+// use js::gc::HandleValue;
+// use js::jsapi::Heap;
+// use js::jsapi::JSObject;
 // use js::jsval::{JSVal, NullValue, UndefinedValue};
 
 use dom_struct::dom_struct;
@@ -51,9 +52,7 @@ struct NavigationApiMethodTracker {
     key: Option<String>,
     // #[ignore_malloc_size_of = "mozjs"]
     // info: Heap<JSVal>,
-    // #[no_trace]
-    // state: Option<StructuredSerializedData>,
-    state: Option<String>,
+    state: Option<StructuredSerializedData>,
     committed_to_entry: Option<DomRoot<NavigationHistoryEntry>>,
     #[ignore_malloc_size_of = "promises are hard"]
     committed_promise: Rc<Promise>,
@@ -79,7 +78,7 @@ impl PartialEq for NavigationApiMethodTracker {
 impl NavigationApiMethodTracker {
     pub fn new(
         global: &GlobalScope,
-        state: Option<String>,
+        state: Option<StructuredSerializedData>,
         committed_promise: Option<Rc<Promise>>,
         finished_promise: Option<Rc<Promise>>,
         can_gc: CanGc,
@@ -373,10 +372,13 @@ impl Navigation {
         api_method_tracker.unwrap()
     }
 
-    /// TODO: Account for the additional arguments
+    /// TODO: Account for info: JavaScript value
     ///
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#maybe-set-the-upcoming-non-traverse-api-method-tracker>
-    fn maybe_set_the_upcoming_non_traverse_api_method_tracker(&self) -> NavigationApiMethodTracker {
+    fn maybe_set_the_upcoming_non_traverse_api_method_tracker(
+        &self,
+        state: Option<StructuredSerializedData>,
+    ) -> NavigationApiMethodTracker {
         // Step 1. Let committedPromise and finishedPromise be new promises created in navigation's
         // relevant realm.
         let committed_promise = Promise::new(&self.global(), CanGc::note());
@@ -389,7 +391,7 @@ impl Navigation {
         let api_method_tracker = NavigationApiMethodTracker::new(
             &self.global(),
             // JSValue::new(),
-            None,
+            state,
             Some(committed_promise),
             Some(finished_promise),
             CanGc::note(),
@@ -445,21 +447,17 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         options: RootedTraceableBox<NavigationUpdateCurrentEntryOptions>,
     ) -> Fallible<()> {
         // Step 1. Let current be the current entry of this.
-        let current = self.GetCurrentEntry();
-
         // Step 2. If current is null, then throw an "InvalidStateError" DOMException.
-        if current.is_none() {
-            return Err(Error::InvalidState);
-        }
+        let idx = self.current_entry_index.ok_or(Error::InvalidState)?;
+        let current = self.entry_list.get(idx).ok_or(Error::InvalidState)?;
 
         // Step 3. Let serializedState be StructuredSerializeForStorage(options["state"]),
         // rethrowing any exceptions.
         let cx = GlobalScope::get_cx();
-
         let serialized_state = structuredclone::write(cx, options.state.handle(), None)?;
 
         // Step 4. Set current's session history entry's navigation API state to serializedState.
-        // TODO
+        current.set_navigation_api_state(serialized_state);
 
         // Step 5. Fire an event named currententrychange at this using
         // NavigationCurrentEntryChangeEvent, with its navigationType attribute initialized to null
@@ -467,7 +465,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         let event_init = NavigationCurrentEntryChangeEventInit {
             parent: EventInit::empty(),
             navigationType: None,
-            from: current.unwrap(),
+            from: current.clone(),
         };
 
         let _event = NavigationCurrentEntryChangeEvent::new(
@@ -555,11 +553,18 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         }
 
         // Step 5. Let state be options["state"], if it exists; otherwise, undefined.
-        let _state = options.state.handle();
+        let state = options.state.handle();
 
         // Step 6. Let serializedState be StructuredSerializeForStorage(state). If this throws an
         // exception, then return an early error result for that exception.
-        // TODO
+        let cx = GlobalScope::get_cx();
+        let serialized_state = match structuredclone::write(cx, state, None) {
+            Ok(result) => result,
+            Err(_) => {
+                // TODO: determine based on the exception
+                return self.early_error_result(Error::InvalidState);
+            }
+        };
 
         // Step 7. If document is not fully active, then return an early error result for an
         // "InvalidStateError" DOMException.
@@ -574,10 +579,12 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         }
 
         // Step 9. Let info be options["info"], if it exists; otherwise, undefined.
+        // let info = options.parent.info.handle();
 
         // Step 10. Let apiMethodTracker be the result of maybe setting the upcoming non-traverse
         // API method tracker for this given info and serializedState.
-        let api_method_tracker = self.maybe_set_the_upcoming_non_traverse_api_method_tracker();
+        let api_method_tracker =
+            self.maybe_set_the_upcoming_non_traverse_api_method_tracker(Some(serialized_state));
 
         // Step 11. Navigate document's node navigable to urlRecord using document, with
         // historyHandling set to options["history"] and navigationAPIState set to serializedState.
@@ -613,17 +620,18 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-reload>
     fn Reload(
         &self,
-        _options: RootedTraceableBox<NavigationReloadOptions>,
+        options: RootedTraceableBox<NavigationReloadOptions>,
     ) -> Fallible<NavigationResult> {
         // Step 1. Let document be this's relevant global object's associated Document.
         let document = &self.window.Document();
 
         // Step 2. Let serializedState be StructuredSerializeForStorage(undefined).
-        // TODO
-
         // Step 3. If options["state"] exists, then set serializedState to
         // StructuredSerializeForStorage(options["state"]). If this throws an exception, then return
         // an early error result for that exception.
+        // TODO how to check if it is set?
+        let cx = GlobalScope::get_cx();
+        let serialized_state = structuredclone::write(cx, options.state.handle(), None)?;
 
         // Step 5. If document is not fully active, then return an early error result for an
         // "InvalidStateError" DOMException.
@@ -633,7 +641,8 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
 
         // Step 8. Let apiMethodTracker be the result of maybe setting the upcoming non-traverse API
         // method tracker for this given info and serializedState.
-        let api_method_tracker = self.maybe_set_the_upcoming_non_traverse_api_method_tracker();
+        let api_method_tracker =
+            self.maybe_set_the_upcoming_non_traverse_api_method_tracker(Some(serialized_state));
 
         // Step 9. Reload document's node navigable with navigationAPIState set to serializedState.
 
