@@ -40,7 +40,6 @@ use net_traits::policy_container::PolicyContainer;
 use net_traits::pub_domains::is_pub_domain;
 use net_traits::request::RequestBuilder;
 use net_traits::response::HttpsState;
-use net_traits::session_history::{DocumentId, SessionHistoryEntry, SessionHistoryEntryStep};
 use net_traits::CookieSource::NonHTTP;
 use net_traits::CoreResourceMsg::{GetCookiesForUrl, SetCookiesForUrl};
 use net_traits::{FetchResponseListener, IpcSend, ReferrerPolicy};
@@ -49,6 +48,7 @@ use percent_encoding::percent_decode;
 use profile_traits::ipc as profile_ipc;
 use profile_traits::time::{TimerMetadata, TimerMetadataFrameType, TimerMetadataReflowType};
 use script_layout_interface::{PendingRestyle, TrustedNodeAddress};
+use script_traits::session_history::{DocumentId, SessionHistoryEntry, SessionHistoryEntryStep};
 use script_traits::{
     AnimationState, AnimationTickType, CompositorEvent, DocumentActivity, MouseButton,
     MouseEventType, ScriptMsg, TouchEventType, TouchId, UntrustedNodeAddress, WheelDelta,
@@ -3177,18 +3177,15 @@ impl Document {
         let entries = self.get_session_history_entries();
 
         // Step 2. Return the item in entries that has the greatest step less than or equal to step.
-        let target_entry = entries
+        entries
             .iter()
             .filter(|entry| match entry.step {
                 SessionHistoryEntryStep::Integer(i) => i <= step,
                 _ => false,
             })
-            .last();
-
-        match target_entry {
-            Some(entry) => entry.clone(),
-            _ => SessionHistoryEntry::default(),
-        }
+            .last()
+            .expect("Document has no session history entries")
+            .clone()
     }
 }
 

@@ -2,11 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use core::todo;
 use std::rc::Rc;
 
 use dom_struct::dom_struct;
-use net_traits::session_history::SessionHistoryEntry;
 use net_traits::ReferrerPolicy;
+use script_traits::session_history::SessionHistoryEntry;
+use script_traits::StructuredSerializedData;
 
 use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::codegen::Bindings::EventHandlerBinding::EventHandlerNonNull;
@@ -38,6 +40,12 @@ impl NavigationHistoryEntry {
         let window = global.as_window();
 
         window.Document()
+    }
+
+    pub fn set_navigation_api_state(&self, state: StructuredSerializedData) {
+        self.session_history_entry
+            .borrow_mut()
+            .set_navigation_api_state(state);
     }
 }
 
@@ -104,7 +112,15 @@ impl NavigationHistoryEntryMethods<crate::DomTypeHolder> for NavigationHistoryEn
 
     /// <https://html.spec.whatwg.org/multipage/#dom-navigationhistoryentry-getstate>
     fn GetState(&self, _cx: JSContext, _rval: js::gc::MutableHandleValue) {
-        todo!()
+        // Step 1. Let document be this's relevant global object's associated Document.
+        let document = self.document();
+
+        // Step 2. If document is not fully active, then return false.
+        if !document.is_fully_active() {
+            return;
+        }
+
+        todo!("");
     }
 
     /// <https://html.spec.whatwg.org/multipage/#handler-navigationhistoryentry-ondispose>

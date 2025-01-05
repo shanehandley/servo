@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use core::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use malloc_size_of_derive::MallocSizeOf;
@@ -10,8 +9,7 @@ use serde::{Deserialize, Serialize};
 use servo_url::ServoUrl;
 use uuid::Uuid;
 
-// use script_traits::StructuredSerializedData;
-use crate::ReferrerPolicy;
+use crate::{ReferrerPolicy, StructuredSerializedData};
 
 /// Rather than actually copy a document into DocumentState, store a unique identifier to match it
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
@@ -44,7 +42,6 @@ pub enum SessionHistoryEntryStep {
     #[default]
     /// The initial state
     Pending,
-    /// todo
     Integer(usize),
 }
 
@@ -60,36 +57,39 @@ pub enum ScrollRestorationMode {
 }
 
 /// <https://html.spec.whatwg.org/multipage/#session-history-entry>
-#[derive(Clone, Debug)]
 #[allow(dead_code)]
+#[derive(Clone, Debug)]
 pub struct SessionHistoryEntry {
     pub step: SessionHistoryEntryStep,
     url: ServoUrl,
-    // navigation_api_state: Cell<StructuredSerializedData>,
+    navigation_api_state: StructuredSerializedData,
     pub document_state: DocumentState,
     navigation_api_key: Uuid,
     scroll_restoration_mode: ScrollRestorationMode,
 }
 
 impl SessionHistoryEntry {
+    pub fn new(navigation_api_state: StructuredSerializedData) -> SessionHistoryEntry {
+        SessionHistoryEntry {
+            step: SessionHistoryEntryStep::default(),
+            url: ServoUrl::parse("about:blank").unwrap(),
+            document_state: DocumentState::default(),
+            navigation_api_state,
+            navigation_api_key: Uuid::new_v4(),
+            scroll_restoration_mode: ScrollRestorationMode::default(),
+        }
+    }
+
     pub fn navigation_api_key(&self) -> Uuid {
         self.navigation_api_key.clone()
     }
 
-    // pub fn set_navigation_api_state(&self, state: StructuredSerializedData) {
+    pub fn navigation_api_state(&self) -> StructuredSerializedData {
+        self.navigation_api_state.clone()
+    }
 
-    // }
-}
-
-impl Default for SessionHistoryEntry {
-    fn default() -> Self {
-        Self {
-            step: Default::default(),
-            url: ServoUrl::parse("about:blank").unwrap(),
-            document_state: Default::default(),
-            navigation_api_key: Uuid::new_v4(),
-            scroll_restoration_mode: ScrollRestorationMode::Auto,
-        }
+    pub fn set_navigation_api_state(&mut self, state: StructuredSerializedData) {
+        self.navigation_api_state = state;
     }
 }
 
