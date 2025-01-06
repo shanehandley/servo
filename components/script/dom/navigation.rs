@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::cmp::Eq;
 use indexmap::IndexMap;
 use script_traits::session_history::{SessionHistoryEntry, SessionHistoryEntryStep};
-use script_traits::StructuredSerializedData;
+use script_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior as ScriptNavigationHistoryBehavior, StructuredSerializedData};
 use servo_atoms::Atom;
 // use js::gc::HandleValue;
 // use js::jsapi::Heap;
@@ -29,7 +29,8 @@ use crate::dom::bindings::codegen::Bindings::NavigationHistoryEntryBinding::
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
 use crate::dom::bindings::codegen::Bindings::EventBinding::EventInit;
 use crate::dom::bindings::error::{Error, Fallible};
-use crate::dom::bindings::reflector::{DomObject, reflect_dom_object};
+use crate::dom::bindings::reflector::{DomGlobal, reflect_dom_object};
+use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::{DOMString, USVString};
 use crate::dom::bindings::structuredclone;
@@ -45,6 +46,8 @@ use crate::dom::navigationtransition::NavigationTransition;
 use crate::dom::promise::Promise;
 use crate::dom::window::Window;
 use crate::script_runtime::CanGc;
+
+use super::bindings::refcounted::Trusted;
 
 /// <https://html.spec.whatwg.org/multipage/#navigation-api-method-tracker>
 #[derive(Clone, MallocSizeOf)]
@@ -139,6 +142,10 @@ impl Navigation {
         Navigation {
             event_target: EventTarget::new_inherited(),
             window: Dom::from_ref(window),
+            /**
+             * Created as empty, this should be populated during creation of a new document:
+             * https://html.spec.whatwg.org/multipage/#initialize-the-navigation-api-entries-for-a-new-document>
+             */
             entry_list: vec![],
             current_entry_index: None,
             ongoing_event: None,
@@ -288,12 +295,24 @@ impl Navigation {
         let navigable_shes: Vec<SessionHistoryEntry> =
             document.get_session_history_entries().to_owned();
 
-        // Step 12. Let targetSHE be the session history entry in navigableSHEs whose navigation API
+        // Step 12.2 Let targetSHE be the session history entry in navigableSHEs whose navigation API
         // key is key. If no such entry exists, then:
-        let target_she = navigable_shes
+        let maybe_target_she = navigable_shes
             .iter()
-            .find(|ref entry| entry.navigation_api_key().as_bytes() == stringified_key.as_bytes())
-            .unwrap(); // TODO
+            .find(|ref entry| entry.navigation_api_key().as_bytes() == stringified_key.as_bytes());
+
+        if maybe_target_she.is_none() {
+            // Step 12.2.1. Queue a global task on the navigation and traversal task source
+            // given navigation's relevant global object to reject the finished promise for
+            // apiMethodTracker with an "InvalidStateError" DOMException.
+            // TODO
+
+            // Step 12.2.2. Abort these steps.
+            // TODO should be via task
+            return self.early_error_result(Error::InvalidState);
+        }
+
+        let target_she = maybe_target_she.unwrap();
 
         let browsing_context = match document.browsing_context() {
             Some(bc) => bc,
@@ -563,7 +582,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
             Err(_) => {
                 // TODO: determine based on the exception
                 return self.early_error_result(Error::InvalidState);
-            }
+            },
         };
 
         // Step 7. If document is not fully active, then return an early error result for an
@@ -588,30 +607,53 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
 
         // Step 11. Navigate document's node navigable to urlRecord using document, with
         // historyHandling set to options["history"] and navigationAPIState set to serializedState.
-        // let this = Trusted::new(self);
-        // let window = Trusted::new(&self.window);
-        // let task = task!(navigate: move || {
-        //     if generation_id != this.root().generation_id.get() {
-        //         return;
-        //     }
-        //     window
-        //         .root()
-        //         .load_url(
-        //             options.history,
-        //             false,
-        //             load_data,
-        //             CanGc::note(),
-        //         );
-        // });
+        let load_data = LoadData::new(
+            LoadOrigin::Script(document.origin().immutable().clone()),
+            url_record,
+            None,
+            self.window.upcast::<GlobalScope>().get_referrer(),
+            document.get_referrer_policy(),
+            None,
+            None,
+        );
+
+        let history_handling = match options.history {
+            NavigationHistoryBehavior::Push => ScriptNavigationHistoryBehavior::Push,
+            NavigationHistoryBehavior::Replace => ScriptNavigationHistoryBehavior::Replace,
+            _ => ScriptNavigationHistoryBehavior::Auto,
+        };
+
+        let window = Trusted::new(document.window());
+        let task = task!(navigate: move || {
+            window
+                .root()
+                .load_url(
+                    history_handling,
+                    false,
+                    load_data,
+                    CanGc::note(),
+                );
+        });
+
+        self.global()
+            .task_manager()
+            .dom_manipulation_task_source()
+            .queue(task);
 
         // Step 12. If this's upcoming non-traverse API method tracker is apiMethodTracker, then:
         // If the upcoming non-traverse API method tracker is still apiMethodTracker, this means
         // that the navigate algorithm bailed out before ever getting to the inner navigate
         // event firing algorithm which would promote that upcoming API method tracker to
         // ongoing.
-        // Step 12.1. Set this's upcoming non-traverse API method tracker to null.
+        if let Some(upcoming) = self.upcoming_non_traverse_method_tracker.borrow().clone() {
+            if upcoming == api_method_tracker {
+                // Step 12.1. Set this's upcoming non-traverse API method tracker to null.
+                *self.upcoming_non_traverse_method_tracker.borrow_mut() = None;
 
-        // Step 12.2. Return an early error result for an "AbortError" DOMException.
+                // Step 12.2. Return an early error result for an "AbortError" DOMException.
+                return self.early_error_result(Error::Abort);
+            }
+        }
 
         // Step 13. Return a navigation API method tracker-derived result for apiMethodTracker.
         self.method_tracker_derived_result(api_method_tracker)
@@ -645,6 +687,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
             self.maybe_set_the_upcoming_non_traverse_api_method_tracker(Some(serialized_state));
 
         // Step 9. Reload document's node navigable with navigationAPIState set to serializedState.
+        // TODO
 
         // Step 10. Return a navigation API method tracker-derived result for apiMethodTracker.
         Ok(self.method_tracker_derived_result(api_method_tracker))
@@ -725,15 +768,10 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     // <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigate>
     event_handler!(navigate, GetOnnavigate, SetOnnavigate);
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigatesuccess>
-    fn GetOnnavigatesuccess(&self) -> Option<Rc<EventHandlerNonNull>> {
-        None
-    }
+    // <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigatesuccess>
+    event_handler!(navigatesuccess, GetOnnavigatesuccess, SetOnnavigatesuccess);
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigatesuccess>
-    fn SetOnnavigatesuccess(&self, _value: Option<Rc<EventHandlerNonNull>>) {}
-
-    // error_event_handler!(onnavigateerror, GetOnnavigateerror, SetOnnavigateerror)
+    // error_event_handler!(navigateerror, GetOnnavigateerror, SetOnnavigateerror);
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigateerror>
     fn GetOnnavigateerror(&self) -> Option<Rc<EventHandlerNonNull>> {
@@ -743,11 +781,10 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigateerror>
     fn SetOnnavigateerror(&self, _value: Option<Rc<EventHandlerNonNull>>) {}
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-oncurrententrychange>
-    fn GetOncurrententrychange(&self) -> Option<Rc<EventHandlerNonNull>> {
-        None
-    }
-
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-oncurrententrychange>
-    fn SetOncurrententrychange(&self, _value: Option<Rc<EventHandlerNonNull>>) {}
+    // <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-oncurrententrychange>
+    event_handler!(
+        currententrychange,
+        GetOncurrententrychange,
+        SetOncurrententrychange
+    );
 }

@@ -16,7 +16,7 @@
     readonly attribute Location location;
   readonly attribute History history;
   readonly attribute Navigation navigation;
-  [Pref="dom.customelements.enabled"]
+  [Pref="dom_customelements_enabled"]
   readonly attribute CustomElementRegistry customElements;
   //[Replaceable] readonly attribute BarProp locationbar;
   //[Replaceable] readonly attribute BarProp menubar;

@@ -5,10 +5,11 @@
 use std::rc::Rc;
 
 use dom_struct::dom_struct;
-use js::gc::HandleObject;
+// use js::jsapi::Heap;
+// use js::jsval::JSVal;
+use js::gc::{HandleObject, MutableHandleValue};
 use servo_atoms::Atom;
 
-use super::event::EventStatus;
 use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::codegen::Bindings::EventBinding::Event_Binding::EventMethods;
 use crate::dom::bindings::codegen::Bindings::NavigateEventBinding::{
@@ -19,14 +20,15 @@ use crate::dom::bindings::codegen::Bindings::NavigationBinding::NavigationType;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
 use crate::dom::bindings::error::{Error, Fallible};
 use crate::dom::bindings::inheritance::Castable;
-use crate::dom::bindings::reflector::{reflect_dom_object_with_proto, DomObject};
+use crate::dom::bindings::reflector::{reflect_dom_object_with_proto, DomGlobal, DomObject};
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::bindings::trace::RootedTraceableBox;
-use crate::dom::event::Event;
+use crate::dom::event::{Event, EventStatus};
+use crate::dom::formdata::FormData;
 use crate::dom::navigationdestination::NavigationDestination;
 use crate::dom::window::Window;
-use crate::script_runtime::CanGc;
+use crate::script_runtime::{CanGc, JSContext};
 
 /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#concept-navigateevent-interception-state>
 #[derive(Clone, JSTraceable, MallocSizeOf, PartialEq)]
@@ -45,8 +47,8 @@ pub struct NavigateEvent {
     // TODO
     // #[ignore_malloc_size_of = "mozjs"]
     // info: RootedTraceableBox<Heap<JSVal>>,
-    destination: DomRoot<NavigationDestination>,
     navigation_type: NavigationType,
+    destination: DomRoot<NavigationDestination>,
     interception_state: DomRefCell<InterceptionState>,
     #[ignore_malloc_size_of = "mozjs"]
     navigation_handler_list: DomRefCell<Vec<Rc<NavigationInterceptHandler>>>,
@@ -57,6 +59,7 @@ pub struct NavigateEvent {
     user_initiated: DomRefCell<bool>,
     has_ua_visible_transitions: DomRefCell<bool>,
     hash_change: DomRefCell<bool>,
+    form_data: Option<DomRoot<FormData>>,
 }
 
 impl NavigateEvent {
@@ -75,6 +78,7 @@ impl NavigateEvent {
             user_initiated: DomRefCell::new(init.userInitiated),
             has_ua_visible_transitions: DomRefCell::new(init.hasUAVisualTransition),
             hash_change: DomRefCell::new(init.hashChange),
+            form_data: None,
         }
     }
 
@@ -211,8 +215,8 @@ impl NavigateEventMethods<crate::DomTypeHolder> for NavigateEvent {
     }
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-formdata>
-    fn GetFormData(&self) -> Option<DomRoot<super::types::FormData>> {
-        todo!()
+    fn GetFormData(&self) -> Option<DomRoot<FormData>> {
+        self.form_data.clone()
     }
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-downloadrequest>
@@ -225,7 +229,7 @@ impl NavigateEventMethods<crate::DomTypeHolder> for NavigateEvent {
     /// API.
     ///
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-info>
-    fn Info(&self, _cx: crate::script_runtime::JSContext, _retval: js::gc::MutableHandleValue) {
+    fn Info(&self, _cx: JSContext, _retval: MutableHandleValue) {
         todo!()
     }
 
