@@ -21,6 +21,7 @@ use crate::dom::htmlformelement::HTMLFormElement;
 use crate::dom::htmllinkelement::HTMLLinkElement;
 use crate::dom::node::NodeTraits;
 use crate::dom::types::{Element, GlobalScope};
+use crate::dom::windowproxy::WindowType;
 use crate::script_runtime::CanGc;
 
 bitflags::bitflags! {
@@ -368,8 +369,8 @@ pub fn follow_hyperlink(
     // Step 7.
     let (maybe_chosen, history_handling) = match target_attribute_value {
         Some(name) => {
-            let (maybe_chosen, new) = source.choose_browsing_context(name, noopener);
-            let history_handling = if new {
+            let (maybe_chosen, window_type) = source.choose_browsing_context(name, noopener);
+            let history_handling = if window_type == WindowType::ExistingOrNone {
                 NavigationHistoryBehavior::Replace
             } else {
                 NavigationHistoryBehavior::Push

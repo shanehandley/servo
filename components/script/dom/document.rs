@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use base::cross_process_instant::CrossProcessInstant;
 use canvas_traits::webgl::{self, WebGLContextId, WebGLMsg};
 use chrono::Local;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{self as csp, CspList};
 use cookie::Cookie;
 use cssparser::match_ignore_ascii_case;
@@ -499,6 +500,10 @@ pub struct Document {
     status_code: Option<u16>,
     /// <https://html.spec.whatwg.org/multipage/#is-initial-about:blank>
     is_initial_about_blank: Cell<bool>,
+    #[no_trace]
+    #[ignore_malloc_size_of = "type from external crate"]
+    /// <https://html.spec.whatwg.org/multipage/#active-sandboxing-flag-set>,
+    active_sandboxing_flag_set: SandboxingFlagSet,
 }
 
 #[allow(non_snake_case)]
@@ -3342,7 +3347,17 @@ impl Document {
             visibility_state: Cell::new(DocumentVisibilityState::Hidden),
             status_code,
             is_initial_about_blank: Cell::new(is_initial_about_blank),
+            active_sandboxing_flag_set: SandboxingFlagSet::empty(),
         }
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#snapshotting-source-snapshot-params>
+    pub fn get_active_sandboxing_flags(&self) -> SandboxingFlagSet {
+        self.active_sandboxing_flag_set.clone()
+    }
+
+    pub fn has_active_sandboxing_flag(&self, flag: SandboxingFlagSet) -> bool {
+        self.active_sandboxing_flag_set.contains(flag)
     }
 
     /// Note a pending compositor event, to be processed at the next `update_the_rendering` task.
@@ -5766,4 +5781,24 @@ fn is_named_element_with_id_attribute(elem: &Element) -> bool {
     // “exposed”, a concept that doesn’t fully make sense until embed/object
     // behaviour is actually implemented
     elem.is::<HTMLImageElement>() && elem.get_name().is_some_and(|name| !name.is_empty())
+}
+
+/// <https://html.spec.whatwg.org/multipage/#source-snapshot-params>
+pub struct SourceSnapshotParams {
+    has_transient_activation: bool,
+    sandboxing_flags: SandboxingFlagSet,
+    allows_downloading: bool,
+    source_policy_container: PolicyContainer,
+}
+
+impl SourceSnapshotParams {
+    /// <https://html.spec.whatwg.org/multipage/#snapshotting-source-snapshot-params>
+    pub fn snapshot(document: &Document) -> Self {
+        SourceSnapshotParams {
+            has_transient_activation: false,
+            sandboxing_flags: document.get_active_sandboxing_flags(),
+            allows_downloading: false, // TODO implement in CSP crate
+            source_policy_container: document.policy_container().to_owned(),
+        }
+    }
 }

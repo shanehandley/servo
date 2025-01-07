@@ -68,6 +68,8 @@ mod unpremultiplytable;
 mod webdriver_handlers;
 mod window_named_properties;
 
+mod navigable;
+
 mod unminify;
 
 mod drag_data_store;

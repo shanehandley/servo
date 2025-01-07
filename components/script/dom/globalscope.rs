@@ -2951,8 +2951,10 @@ impl GlobalScope {
         if self.downcast::<Window>().is_some() {
             return self.policy_container().csp_list;
         }
-        // TODO: Worker and Worklet global scopes.
-        None
+        if self.downcast::<WorkerGlobalScope>().is_some() {
+            return self.policy_container().csp_list;
+        }
+        unreachable!();
     }
 
     pub fn status_code(&self) -> Option<u16> {

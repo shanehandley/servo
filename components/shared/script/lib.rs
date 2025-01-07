@@ -233,7 +233,7 @@ pub enum DiscardBrowsingContext {
 }
 
 /// <https://html.spec.whatwg.org/multipage/#navigation-supporting-concepts:navigationhistorybehavior>
-#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub enum NavigationHistoryBehavior {
     /// The default value, which will be converted very early in the navigate algorithm into "push"
     /// or "replace". Usually it becomes "push", but under certain circumstances it becomes

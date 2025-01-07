@@ -6,7 +6,7 @@ use std::cmp::PartialEq;
 use std::fmt;
 
 use base::id::{BrowsingContextId, HistoryStateId, PipelineId, TopLevelBrowsingContextId};
-use euclid::Size2D;
+use euclid::{default, Size2D};
 use log::debug;
 use script_traits::LoadData;
 use servo_url::ServoUrl;

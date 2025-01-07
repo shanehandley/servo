@@ -6,6 +6,7 @@ use std::borrow::ToOwned;
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use dom_struct::dom_struct;
 use encoding_rs::{Encoding, UTF_8};
 use headers::{ContentType, HeaderMapExt};
@@ -13,8 +14,7 @@ use html5ever::{local_name, namespace_url, ns, LocalName, Prefix};
 use http::Method;
 use js::rust::HandleObject;
 use mime::{self, Mime};
-use net_traits::http_percent_encode;
-use net_traits::request::Referrer;
+use net_traits::{http_percent_encode, ReferrerPolicy};
 use script_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior};
 use servo_atoms::Atom;
 use servo_rand::random;
@@ -52,7 +52,7 @@ use crate::dom::customelementregistry::CallbackReaction;
 use crate::dom::document::Document;
 use crate::dom::domtokenlist::DOMTokenList;
 use crate::dom::element::{AttributeMutation, Element};
-use crate::dom::event::{Event, EventBubbles, EventCancelable};
+use crate::dom::event::{Event, EventBubbles, EventCancelable, EventStatus};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::file::File;
 use crate::dom::formdata::FormData;
@@ -724,33 +724,57 @@ impl HTMLFormElement {
         submitter: FormSubmitterElement,
         can_gc: CanGc,
     ) {
-        // Step 1
+        // Step 1: If form cannot navigate, then return.
         if self.upcast::<Element>().cannot_navigate() {
             return;
         }
 
-        // Step 2
+        // Step 2: If form's constructing entry list is true, then return.
         if self.constructing_entry_list.get() {
             return;
         }
-        // Step 3
-        let doc = self.owner_document();
-        let base = doc.base_url();
-        // TODO: Handle browsing contexts (Step 4, 5)
-        // Step 6
+
+        // Step 3: Let form document be form's node document.
+        let form_document = document_from_node(self);
+
+        // Step 4: If form document's active sandboxing flag set has its sandboxed forms browsing
+        // context flag set, then return.
+        if form_document
+            .has_active_sandboxing_flag(SandboxingFlagSet::SANDBOXED_FORMS_BROWSING_CONTEXT_FLAG)
+        {
+            return;
+        }
+
+        let base = form_document.base_url();
+
+        // Step 5: If submitted from submit() method is false, then:
         if submit_method_flag == SubmittedFrom::NotFromForm {
-            // Step 6.1
+            // Step 5.1: If form's firing submission events is true, then return.
             if self.firing_submission_events.get() {
                 return;
             }
-            // Step 6.2
+
+            // Step 5.2: Set form's firing submission events to true.
             self.firing_submission_events.set(true);
-            // Step 6.3
+
+            // Step 5.3: For each element field in the list of submittable elements whose form
+            // owner is form, set field's user validity to true.
+            // TODO
+
+            // Step 5.4: If the submitter element's no-validate state is false, then interactively
+            // validate the constraints of form and examine the result. If the result is negative
+            // (i.e., the constraint validation concluded that there were invalid fields and
+            // probably informed the user of this), then:
             if !submitter.no_validate(self) && self.interactive_validation(can_gc).is_err() {
+                // Step 5.4.1: Set form's firing submission events to false.
                 self.firing_submission_events.set(false);
+
+                // Step 5.4.2: Return.
                 return;
             }
-            // Step 6.4
+
+            // Step 5.5: Let submitterButton be null if submitter is form. Otherwise, let
+            // submitterButton be submitter.
             // spec calls this "submitterButton" but it doesn't have to be a button,
             // just not be the form itself
             let submitter_button = match submitter {
@@ -763,9 +787,13 @@ impl HTMLFormElement {
                 },
                 FormSubmitterElement::Input(i) => Some(i.upcast::<HTMLElement>()),
                 FormSubmitterElement::Button(b) => Some(b.upcast::<HTMLElement>()),
+                // FormSubmitterElement::Img(i) => Some(i.upcast::<HTMLElement>()),
             };
 
-            // Step 6.5
+            // Step 5.6: Let shouldContinue be the result of firing an event named submit at form
+            // using SubmitEvent, with the submitter attribute initialized to submitterButton, the
+            // bubbles attribute initialized to true, and the cancelable attribute initialized to
+            // true.
             let event = SubmitEvent::new(
                 &self.global(),
                 atom!("submit"),
@@ -774,53 +802,76 @@ impl HTMLFormElement {
                 submitter_button.map(DomRoot::from_ref),
                 can_gc,
             );
-            let event = event.upcast::<Event>();
-            event.fire(self.upcast::<EventTarget>(), can_gc);
 
-            // Step 6.6
+            let event = event.upcast::<Event>();
+
+            let should_continue = event.fire(self.upcast::<EventTarget>(), can_gc);
+
+            // Step 6.7: Set form's firing submission events to false.
             self.firing_submission_events.set(false);
-            // Step 6.7
-            if event.DefaultPrevented() {
+
+            // Step 6.8: If shouldContinue is false, then return.
+            if should_continue == EventStatus::Canceled {
                 return;
             }
-            // Step 6.8
+
+            // Step 6.9: If form cannot navigate, then return.
             if self.upcast::<Element>().cannot_navigate() {
                 return;
             }
         }
 
-        // Step 7
+        // Step 6: Let encoding be the result of picking an encoding for the form.
         let encoding = self.pick_encoding();
 
-        // Step 8
-        let mut form_data = match self.get_form_dataset(Some(submitter), Some(encoding), can_gc) {
+        // Step 7: Let entry list be the result of constructing the entry list with form, submitter,
+        // and encoding.
+        let mut entry_list = match self.get_form_dataset(Some(submitter), Some(encoding), can_gc) {
             Some(form_data) => form_data,
             None => return,
         };
 
-        // Step 9
+        // Step 8: Assert: entry list is not null.
+        // debug_assert!(!entry_list.is_empty());
+
+        // Step 9: If form cannot navigate, then return.
         if self.upcast::<Element>().cannot_navigate() {
             return;
         }
 
-        // Step 10
+        // Step 10: Let method be the submitter element's method.
+        let method = submitter.method();
+
+        // Step 11: If method is dialog, then:
+        if method == FormMethod::Dialog {
+            // TODO: Inner steps
+
+            return;
+        }
+
+        // Step 12: Let action be the submitter element's action.
         let mut action = submitter.action();
 
-        // Step 11
+        // Step 11: If action is the empty string, let action be the URL of the form document.
         if action.is_empty() {
             action = DOMString::from(base.as_str());
         }
+
         // Step 12-13
         let action_components = match base.join(&action) {
             Ok(url) => url,
             Err(_) => return,
         };
+
         // Step 14-16
         let scheme = action_components.scheme().to_owned();
-        let enctype = submitter.enctype();
-        let method = submitter.method();
 
-        // Step 17
+        // Step 17: Let enctype be the submitter element's enctype.
+        let enctype = submitter.enctype();
+
+        // Step 18: Let formTarget be null.
+        // Step 19: If the submitter element is a submit button and it has a formtarget attribute,
+        // then set formTarget to the formtarget attribute value.
         let target_attribute_value =
             if submitter.is_submit_button() && submitter.target() != DOMString::new() {
                 Some(submitter.target())
@@ -830,14 +881,18 @@ impl HTMLFormElement {
                 get_element_target(form.upcast::<Element>())
             };
 
-        // Step 18
+        // Step 20: Let target be the result of getting an element's target given submitter's form
+        // owner and formTarget.
+        // TODO?
+
+        // Step 21: Let noopener be the result of getting an element's noopener with form and target.
         let noopener = self
             .relations
             .get()
             .get_element_noopener(target_attribute_value.as_ref());
 
         // Step 19
-        let source = doc.browsing_context().unwrap();
+        let source = form_document.browsing_context().unwrap();
         let (maybe_chosen, _new) = source
             .choose_browsing_context(target_attribute_value.unwrap_or(DOMString::new()), noopener);
 
@@ -846,14 +901,28 @@ impl HTMLFormElement {
             Some(proxy) => proxy,
             None => return,
         };
+
+        // Step 22: Let targetNavigable be the first return value of applying the rules for choosing
+        // a navigable given target, form's node navigable, and noopener.
         let target_document = match chosen.document() {
             Some(doc) => doc,
+            // Step 23: If targetNavigable is null, then return.
             None => return,
         };
+
+        // Step 24: Let historyHandling be "auto".
+        let mut history_handling = NavigationHistoryBehavior::Auto;
+
+        // Step 25: If form document equals targetNavigable's active document, and form document has
+        // not yet completely loaded, then set historyHandling to "replace".
+        if form_document == target_document && !form_document.completely_loaded() {
+            history_handling = NavigationHistoryBehavior::Replace;
+        }
+
         // Step 21
         let target_window = target_document.window();
         let mut load_data = LoadData::new(
-            LoadOrigin::Script(doc.origin().immutable().clone()),
+            LoadOrigin::Script(form_document.origin().immutable().clone()),
             action_components,
             None,
             target_window.upcast::<GlobalScope>().get_referrer(),
@@ -861,7 +930,10 @@ impl HTMLFormElement {
             Some(target_window.upcast::<GlobalScope>().is_secure_context()),
         );
 
-        // Step 22
+        // Step 26: Select the appropriate row in the table below based on scheme as given by the
+        // first cell of each row. Then, select the appropriate cell on that row based on method as
+        // given in the first cell of each column. Then, jump to the steps named in that cell and
+        // defined below the table.
         match (&*scheme, method) {
             (_, FormMethod::Dialog) => {
                 // TODO: Submit dialog
@@ -872,17 +944,18 @@ impl HTMLFormElement {
                 load_data
                     .headers
                     .typed_insert(ContentType::from(mime::APPLICATION_WWW_FORM_URLENCODED));
-                self.mutate_action_url(&mut form_data, load_data, encoding, target_window);
+                self.mutate_action_url(&mut entry_list, load_data, encoding, target_window);
             },
             // https://html.spec.whatwg.org/multipage/#submit-body
             ("http", FormMethod::Post) | ("https", FormMethod::Post) => {
                 load_data.method = Method::POST;
                 self.submit_entity_body(
-                    &mut form_data,
+                    &mut entry_list,
                     load_data,
                     enctype,
                     encoding,
                     target_window,
+                    history_handling,
                     can_gc,
                 );
             },
@@ -934,6 +1007,7 @@ impl HTMLFormElement {
         enctype: FormEncType,
         encoding: &'static Encoding,
         target: &Window,
+        history_handling: NavigationHistoryBehavior,
         can_gc: CanGc,
     ) {
         let boundary = generate_boundary();
@@ -976,6 +1050,7 @@ impl HTMLFormElement {
             .expect("Couldn't extract body.")
             .into_net_request_body()
             .0;
+
         load_data.data = Some(request_body);
 
         self.plan_to_navigate(load_data, target);
@@ -996,26 +1071,28 @@ impl HTMLFormElement {
 
     /// [Planned navigation](https://html.spec.whatwg.org/multipage/#planned-navigation)
     fn plan_to_navigate(&self, mut load_data: LoadData, target: &Window) {
-        // Step 1
         // Each planned navigation task is tagged with a generation ID, and
         // before the task is handled, it first checks whether the HTMLFormElement's
         // generation ID is the same as its own generation ID.
         let generation_id = GenerationId(self.generation_id.get().0 + 1);
         self.generation_id.set(generation_id);
 
-        // Step 2
         let elem = self.upcast::<Element>();
-        let referrer = match elem.get_attribute(&ns!(), &local_name!("rel")) {
+
+        // Step 1: Let referrerPolicy be the empty string.
+        // Step 2: If the form element's link types include the noreferrer keyword, then set
+        // referrerPolicy to "no-referrer".
+        let referrer_policy = match elem.get_attribute(&ns!(), &local_name!("rel")) {
             Some(ref link_types) if link_types.Value().contains("noreferrer") => {
-                Referrer::NoReferrer
+                ReferrerPolicy::NoReferrer
             },
-            _ => target.upcast::<GlobalScope>().get_referrer(),
+            _ => ReferrerPolicy::default(),
         };
 
-        let referrer_policy = target.Document().get_referrer_policy();
         let pipeline_id = target.upcast::<GlobalScope>().pipeline_id();
+
         load_data.creator_pipeline_id = Some(pipeline_id);
-        load_data.referrer = referrer;
+        load_data.referrer = target.upcast::<GlobalScope>().get_referrer();
         load_data.referrer_policy = referrer_policy;
 
         // Step 4.
@@ -1364,7 +1441,7 @@ pub enum FormEncType {
     MultipartFormData,
 }
 
-#[derive(Clone, Copy, MallocSizeOf)]
+#[derive(Clone, Copy, MallocSizeOf, PartialEq)]
 pub enum FormMethod {
     Get,
     Post,
@@ -1377,6 +1454,7 @@ pub enum FormSubmitterElement<'a> {
     Form(&'a HTMLFormElement),
     Input(&'a HTMLInputElement),
     Button(&'a HTMLButtonElement),
+    // Img(&'a HTMLImageElement),
     // TODO: implement other types of form associated elements
     // (including custom elements) that can be passed as submitter.
 }
