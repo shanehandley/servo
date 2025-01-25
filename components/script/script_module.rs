@@ -1278,8 +1278,7 @@ impl FetchResponseListener for ModuleContext {
 
 impl ResourceTimingListener for ModuleContext {
     fn resource_timing_information(&self) -> (InitiatorType, ServoUrl) {
-        let initiator_type = InitiatorType::LocalName("module".to_string());
-        (initiator_type, self.url.clone())
+        (InitiatorType::Script, self.url.clone())
     }
 
     fn resource_timing_global(&self) -> DomRoot<GlobalScope> {

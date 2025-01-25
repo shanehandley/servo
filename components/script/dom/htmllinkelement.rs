@@ -741,10 +741,7 @@ impl FetchResponseListener for PrefetchContext {
 
 impl ResourceTimingListener for PrefetchContext {
     fn resource_timing_information(&self) -> (InitiatorType, ServoUrl) {
-        (
-            InitiatorType::LocalName("prefetch".to_string()),
-            self.url.clone(),
-        )
+        (InitiatorType::Link, self.url.clone())
     }
 
     fn resource_timing_global(&self) -> DomRoot<GlobalScope> {

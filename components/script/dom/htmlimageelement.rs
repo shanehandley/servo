@@ -305,10 +305,7 @@ impl FetchResponseListener for ImageContext {
 
 impl ResourceTimingListener for ImageContext {
     fn resource_timing_information(&self) -> (InitiatorType, ServoUrl) {
-        (
-            InitiatorType::LocalName("img".to_string()),
-            self.url.clone(),
-        )
+        (InitiatorType::Img, self.url.clone())
     }
 
     fn resource_timing_global(&self) -> DomRoot<GlobalScope> {

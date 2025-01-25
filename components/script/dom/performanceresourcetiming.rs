@@ -23,11 +23,20 @@ use crate::script_runtime::CanGc;
 // TODO Cross origin resources MUST BE INCLUDED as PerformanceResourceTiming objects
 // https://w3c.github.io/resource-timing/#sec-cross-origin-resources
 
-// TODO CSS, Beacon
+// TODO Remaining values
+/// <https://fetch.spec.whatwg.org/#request-initiator-type>
+///
+/// These should match the resource-timing specification, but the fetch and resource-timing specs
+/// have diverged; The fetch spec appears to be more up-to-date according to
+/// https://github.com/w3c/resource-timing/issues/364
 #[derive(Debug, JSTraceable, MallocSizeOf, PartialEq)]
 pub(crate) enum InitiatorType {
+    Css,
+    Img,
+    Link,
     LocalName(String),
     Navigation,
+    Script,
     XMLHttpRequest,
     Fetch,
     Other,
@@ -190,8 +199,12 @@ impl PerformanceResourceTimingMethods<crate::DomTypeHolder> for PerformanceResou
     // https://w3c.github.io/resource-timing/#dom-performanceresourcetiming-initiatortype
     fn InitiatorType(&self) -> DOMString {
         match self.initiator_type {
+            InitiatorType::Css => DOMString::from("css"),
+            InitiatorType::Img => DOMString::from("img"),
+            InitiatorType::Link => DOMString::from("link"),
             InitiatorType::LocalName(ref n) => DOMString::from(n.clone()),
             InitiatorType::Navigation => DOMString::from("navigation"),
+            InitiatorType::Script => DOMString::from("script"),
             InitiatorType::XMLHttpRequest => DOMString::from("xmlhttprequest"),
             InitiatorType::Fetch => DOMString::from("fetch"),
             InitiatorType::Other => DOMString::from("other"),
