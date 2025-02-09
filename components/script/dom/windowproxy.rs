@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ptr;
 
 use base::id::{BrowsingContextId, PipelineId, TopLevelBrowsingContextId};
@@ -129,7 +129,7 @@ pub(crate) struct WindowProxy {
     creator_origin: Option<ImmutableOrigin>,
 
     /// <https://html.spec.whatwg.org/multipage/#tn-current-session-history-step>
-    current_session_history_step: usize,
+    current_session_history_step: Cell<usize>,
 
     /// <https://html.spec.whatwg.org/multipage/#tn-session-history-entries>
     #[no_trace]
@@ -142,7 +142,7 @@ pub(crate) struct WindowProxy {
     /// document.
     ///
     /// <https://html.spec.whatwg.org/multipage/#nav-active-history-entry>
-    active_session_history_entry: SessionHistoryEntry,
+    active_session_history_entry: RefCell<SessionHistoryEntry>,
 }
 
 impl WindowProxy {
@@ -179,9 +179,12 @@ impl WindowProxy {
             creator_base_url: creator.base_url,
             creator_url: creator.url,
             creator_origin: creator.origin,
-            current_session_history_step: 0,
+            current_session_history_step: Cell::new(0),
             session_history_entries: vec![],
-            active_session_history_entry: SessionHistoryEntry::new(navigation_api_state),
+            active_session_history_entry: RefCell::new(SessionHistoryEntry::new(
+                navigation_api_state,
+                None,
+            )),
         }
     }
 
@@ -742,8 +745,13 @@ impl WindowProxy {
         *self.name.borrow_mut() = name;
     }
 
+    pub fn set_active_session_history_entry(&self, entry: SessionHistoryEntry) {
+        *self.active_session_history_entry.borrow_mut() = entry;
+    }
+
     pub fn is_active_session_history_entry(&self, other: &SessionHistoryEntry) -> bool {
-        &self.active_session_history_entry == other
+        // TODO(NavigationAPI)
+        &self.active_session_history_entry.borrow().clone() == other
     }
 }
 

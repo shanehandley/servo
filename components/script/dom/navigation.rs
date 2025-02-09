@@ -2,9 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use core::fmt::Debug;
+use std::cell::Cell;
+use std::collections::BTreeSet;
+use std::fmt::Debug;
 use std::rc::Rc;
 use std::cmp::Eq;
+
 use indexmap::IndexMap;
 use script_traits::session_history::{SessionHistoryEntry, SessionHistoryEntryStep};
 use script_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior as ScriptNavigationHistoryBehavior, StructuredSerializedData};
@@ -107,8 +110,10 @@ pub struct Navigation {
     window: Dom<Window>,
     /// <https://html.spec.whatwg.org/multipage/#navigation-entry-list>
     entry_list: Vec<DomRoot<NavigationHistoryEntry>>,
+    /// The -1 case for this value is represented by `None`
+    ///
     /// <https://html.spec.whatwg.org/multipage/#navigation-current-entry-index>
-    current_entry_index: Option<usize>,
+    current_entry_index: Cell<Option<usize>>,
     /// https://html.spec.whatwg.org/multipage/#ongoing-navigate-event
     ongoing_event: Option<NavigateEvent>,
     transition: Option<DomRoot<NavigationTransition>>,
@@ -142,12 +147,9 @@ impl Navigation {
         Navigation {
             event_target: EventTarget::new_inherited(),
             window: Dom::from_ref(window),
-            /**
-             * Created as empty, this should be populated during creation of a new document:
-             * https://html.spec.whatwg.org/multipage/#initialize-the-navigation-api-entries-for-a-new-document>
-             */
+            // https://html.spec.whatwg.org/multipage/#initialize-the-navigation-api-entries-for-a-new-document
             entry_list: vec![],
-            current_entry_index: None,
+            current_entry_index: Cell::new(None),
             ongoing_event: None,
             transition: None,
             activation: None,
@@ -292,7 +294,7 @@ impl Navigation {
         // Step 12. Append the following session history traversal steps to traversable:
         // Step 12.1. Let navigableSHEs be the result of getting session history entries given
         // navigable.
-        let navigable_shes: Vec<SessionHistoryEntry> =
+        let navigable_shes: BTreeSet<SessionHistoryEntry> =
             document.get_session_history_entries().to_owned();
 
         // Step 12.2 Let targetSHE be the session history entry in navigableSHEs whose navigation API
@@ -429,6 +431,15 @@ impl Navigation {
         // Step 6. Return apiMethodTracker.
         api_method_tracker
     }
+
+    pub fn set_current_entry_index(&self, index: Option<usize>) {
+        self.current_entry_index.set(index);
+    }
+
+    pub fn append_session_history_entry(&self, entry: SessionHistoryEntry) {
+        // TODO for testing only, we should never do this in practice
+        // self.entry_list.push(entry);
+    }
 }
 
 #[allow(non_snake_case)]
@@ -446,16 +457,26 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigation-current-entry>
     fn GetCurrentEntry(&self) -> Option<DomRoot<NavigationHistoryEntry>> {
+        // https://html.spec.whatwg.org/multipage/nav-history-apis.html#initialize-the-navigation-api-entries-for-a-new-document
+        // https://html.spec.whatwg.org/multipage/browsing-the-web.html#updating-the-document:initialize-the-navigation-api-entries-for-a-new-document
+        //
+        // https://html.spec.whatwg.org/multipage/document-sequences.html#creating-a-new-top-level-traversable
+        // https://html.spec.whatwg.org/multipage/document-sequences.html#initialize-the-navigable
+
         // Step 1: If navigation has entries and events disabled, then return null.
         if self.has_entries_and_events_disabled() {
+            warn!("GetCurrentEntry::has_entries_and_events_disabled");
+
             return None;
         }
 
         // Step 2, 3
-        if let Some(idx) = self.current_entry_index {
+        if let Some(idx) = self.current_entry_index.get() {
             // Step 3: Return navigation's entry list[navigation's current entry index].
             return self.entry_list.get(idx).clone().cloned();
         }
+
+        warn!("GetCurrentEntry::current_entry_index is -1");
 
         None
     }
@@ -467,7 +488,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     ) -> Fallible<()> {
         // Step 1. Let current be the current entry of this.
         // Step 2. If current is null, then throw an "InvalidStateError" DOMException.
-        let idx = self.current_entry_index.ok_or(Error::InvalidState)?;
+        let idx = self.current_entry_index.get().ok_or(Error::InvalidState)?;
         let current = self.entry_list.get(idx).ok_or(Error::InvalidState)?;
 
         // Step 3. Let serializedState be StructuredSerializeForStorage(options["state"]),
@@ -519,7 +540,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
 
         // Step 3. If this's current entry index is 0, then return false.
         // Step 4. Return true.
-        match self.current_entry_index {
+        match self.current_entry_index.get() {
             Some(idx) => idx > 0,
             _ => false,
         }
@@ -537,7 +558,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         // Step 3. If this's current entry index is equal to this's entry list's size − 1, then
         // return false.
         // Step 4. Return true.
-        match self.current_entry_index {
+        match self.current_entry_index.get() {
             Some(idx) => idx == self.entry_list.len() - 1,
             _ => false,
         }
@@ -701,7 +722,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     ) -> NavigationResult {
         // Step 1. If this's current entry index is −1, then return an early error result for an
         // "InvalidStateError" DOMException.
-        match self.current_entry_index {
+        match self.current_entry_index.get() {
             None => self.early_error_result(Error::InvalidState),
             Some(i) if i < 1 || i == self.entry_list.len() => {
                 self.early_error_result(Error::InvalidState)
@@ -724,7 +745,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
 
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-back>
     fn Back(&self, options: RootedTraceableBox<NavigationOptions>) -> NavigationResult {
-        match self.current_entry_index {
+        match self.current_entry_index.get() {
             None => self.early_error_result(Error::InvalidState),
             // Step 1, If this's current entry index is −1 or 0, then return an early error result
             // for an "InvalidStateError" DOMException.
@@ -747,7 +768,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
     /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-forward>
     fn Forward(&self, options: RootedTraceableBox<NavigationOptions>) -> NavigationResult {
         // Step 1
-        match self.current_entry_index {
+        match self.current_entry_index.get() {
             None => self.early_error_result(Error::InvalidState),
             Some(i) if i < 1 || i == self.entry_list.len() => {
                 self.early_error_result(Error::InvalidState)

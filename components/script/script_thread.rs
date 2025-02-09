@@ -55,6 +55,7 @@ use html5ever::{local_name, namespace_url, ns};
 use hyper_serde::Serde;
 use ipc_channel::ipc;
 use ipc_channel::router::ROUTER;
+use js::gc::HandleValue;
 use js::glue::GetWindowProxyClass;
 use js::jsapi::{
     JSContext as UnsafeJSContext, JSTracer, JS_AddInterruptCallback, SetWindowProxyClass,
@@ -79,6 +80,8 @@ use profile_traits::time_profile;
 use script_layout_interface::{
     node_id_from_scroll_id, LayoutConfig, LayoutFactory, ReflowGoal, ScriptThreadFactory,
 };
+use script_traits::session_history::{DocumentState, SessionHistoryEntry};
+use script_traits::webdriver_msg::WebDriverScriptCommand;
 use script_traits::{
     ConstellationInputEvent, DiscardBrowsingContext, DocumentActivity, EventResult,
     InitialScriptState, JsEvalResult, LoadData, LoadOrigin, NavigationHistoryBehavior,
@@ -117,6 +120,7 @@ use crate::dom::bindings::root::{
 };
 use crate::dom::bindings::settings_stack::AutoEntryScript;
 use crate::dom::bindings::str::DOMString;
+use crate::dom::bindings::structuredclone;
 use crate::dom::bindings::trace::{HashMapTracedValues, JSTraceable};
 use crate::dom::customelementregistry::{
     CallbackReaction, CustomElementDefinition, CustomElementReactionStack,
@@ -3208,6 +3212,22 @@ impl ScriptThread {
             .insert(incomplete.pipeline_id, &document);
 
         window.init_document(&document);
+
+        let cx = GlobalScope::get_cx();
+
+        // https://html.spec.whatwg.org/multipage/document-sequences.html#initialize-the-navigable
+        let navigation_api_state =
+            structuredclone::write(cx, HandleValue::null(), None).expect("Failed to build state");
+
+        let session_history_entry =
+            SessionHistoryEntry::new(navigation_api_state, Some(final_url.clone()));
+
+        window_proxy.set_active_session_history_entry(session_history_entry.clone());
+
+        let navigation = window.Navigation();
+
+        navigation.set_current_entry_index(Some(1));
+        navigation.append_session_history_entry(session_history_entry);
 
         // For any similar-origin iframe, ensure that the contentWindow/contentDocument
         // APIs resolve to the new window/document as soon as parsing starts.

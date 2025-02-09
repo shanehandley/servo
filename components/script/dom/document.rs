@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::default::Default;
 use std::f64::consts::PI;
 use std::mem;
@@ -533,7 +533,7 @@ pub(crate) struct Document {
     /// <https://html.spec.whatwg.org/multipage/#tn-session-history-entries>
     #[no_trace]
     #[ignore_malloc_size_of = "todo"]
-    session_history_entries: Vec<SessionHistoryEntry>,
+    session_history_entries: BTreeSet<SessionHistoryEntry>,
 }
 
 #[allow(non_snake_case)]
@@ -3477,8 +3477,9 @@ impl Document {
     }
 
     /// NavigationApi
+    // TODO(NavigationAPI)
     /// <https://html.spec.whatwg.org/multipage/#apply-the-history-step>
-    pub fn apply_history_step(
+    pub(crate) fn apply_history_step(
         &self,
         step: usize,
         // check_for_cancellation: bool // TODO
@@ -3532,50 +3533,57 @@ impl Document {
         HistoryApplicationResult::Applied
     }
 
-    /// NavigationApi
     /// <https://html.spec.whatwg.org/multipage/#getting-the-used-step>
     fn get_the_used_step(&self, step: usize) -> usize {
         // Step 1. Let steps be the result of getting all used history steps within traversable.
         let steps = self.get_all_used_history_steps();
 
         // Step 2. Return the greatest item in steps that is less than or equal to step.
-        // steps.iter().find(|step_entry| {
-        //     match step_entry {
-        //         &SessionHistoryEntryStep::Integer(i) => *i == step,
-        //         _ => false
-        //     }
-        // })
-
-        step
+        steps.range(..=step).next_back().cloned().unwrap_or(0)
     }
 
-    /// NavigationApi
+    // TODO(NavigationApi)
     /// <https://html.spec.whatwg.org/multipage/#getting-all-used-history-steps>
-    fn get_all_used_history_steps(&self) -> Vec<SessionHistoryEntryStep> {
+    fn get_all_used_history_steps(&self) -> BTreeSet<usize> {
         // Step 2.1.1. Assert: this is running within traversable's session history traversal queue.
         // TODO
 
         // Step 2. Let steps be an empty ordered set of non-negative integers.
-        let mut steps: Vec<SessionHistoryEntryStep> = vec![];
+        let mut steps: BTreeSet<usize> = BTreeSet::new();
 
         // Step 3. Let entryLists be the ordered set « traversable's session history entries ».
-        let entry_list: Vec<SessionHistoryEntry> = self.get_session_history_entries();
+        let entry_list: BTreeSet<SessionHistoryEntry> = self.get_session_history_entries();
+
+        // It's not clear whether the entry_list should grow during iteration with values from
+        // entry.nested_histories? That would require two separate operations
 
         for entry in entry_list.iter() {
-            // Append entry's step to steps.
-            steps.push(entry.step.clone());
+            // Step 4.1.1. Append entry's step to steps.
+            match entry.step {
+                SessionHistoryEntryStep::Integer(value) => {
+                    steps.insert(value);
+                },
+                _ => {}
+            }
 
             // For each nestedHistory of entry's document state's nested histories, append
             // nestedHistory's entries list to entryLists.
-            // TODO
+            for nested_history in entry.document_state.nested_histories.iter() {
+                for entry in nested_history.entries().iter() {
+                    self.append_session_history_entry(entry.clone());
+                }
+            }
         }
 
         // Step 5. Return steps, sorted.
-        // TODO
         steps
     }
 
-    /// NavigationAPI
+    fn append_session_history_entry(&self, _entry: SessionHistoryEntry) {
+        // TODO
+    }
+
+    // TODO(NavigationAPI)
     /// https://html.spec.whatwg.org/multipage/#getting-the-target-history-entry
     fn get_the_target_history_entry(&self, step: usize) -> SessionHistoryEntry {
         // Step 1. Let entries be the result of getting session history entries for navigable.
@@ -3892,7 +3900,7 @@ impl Document {
             inherited_insecure_requests_policy: Cell::new(inherited_insecure_requests_policy),
             intersection_observer_task_queued: Cell::new(false),
             current_session_history_step: 0,
-            session_history_entries: vec![],
+            session_history_entries: BTreeSet::new(),
         }
     }
 
@@ -4766,7 +4774,7 @@ impl Document {
     }
 
     /// <https://html.spec.whatwg.org/multipage/#getting-session-history-entries>
-    pub fn get_session_history_entries(&self) -> Vec<SessionHistoryEntry> {
+    pub fn get_session_history_entries(&self) -> BTreeSet<SessionHistoryEntry> {
         // Step 1. Let traversable be navigable's traversable navigable.
 
         // Step 2. Assert: this is running within traversable's session history traversal queue.
