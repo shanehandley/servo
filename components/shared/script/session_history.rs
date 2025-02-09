@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use std::cmp::{Ord, PartialOrd};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use malloc_size_of_derive::MallocSizeOf;
@@ -28,15 +29,49 @@ impl Default for DocumentId {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
+pub struct NestedHistoryId(usize);
+
+impl NestedHistoryId {
+    pub fn next() -> Self {
+        static NEXT_NESTED_HISTORY_ID: AtomicUsize = AtomicUsize::new(0);
+        Self(NEXT_NESTED_HISTORY_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+impl Default for NestedHistoryId {
+    fn default() -> Self {
+        NestedHistoryId::next()
+    }
+}
+
+/// <https://html.spec.whatwg.org/multipage/#nested-history>
+#[derive(Clone, Debug, Default)]
+pub struct NestedHistory {
+    id: NestedHistoryId,
+    entries: Vec<SessionHistoryEntry>
+}
+
+impl NestedHistory {
+    pub fn id(&self) -> usize {
+        self.id.0
+    }
+
+    pub fn entries(&self) -> Vec<SessionHistoryEntry> {
+        self.entries.clone()
+    }
+}
+
 /// <https://html.spec.whatwg.org/multipage/#document-state-2>
 #[derive(Clone, Debug, Default)]
 pub struct DocumentState {
     pub document_id: DocumentId,
     pub document_referrer_policy: ReferrerPolicy,
     pub reload_pending: bool,
+    pub nested_histories: Vec<NestedHistory>,
 }
 
-/// <https://html.spec.whatwg.org/multipage/browsing-the-web.html#she-step>
+/// <https://html.spec.whatwg.org/multipage/#she-step>
 #[derive(Clone, Debug, Default)]
 pub enum SessionHistoryEntryStep {
     #[default]
@@ -69,10 +104,13 @@ pub struct SessionHistoryEntry {
 }
 
 impl SessionHistoryEntry {
-    pub fn new(navigation_api_state: StructuredSerializedData) -> SessionHistoryEntry {
+    pub fn new(
+        navigation_api_state: StructuredSerializedData,
+        url: Option<ServoUrl>,
+    ) -> SessionHistoryEntry {
         SessionHistoryEntry {
             step: SessionHistoryEntryStep::default(),
-            url: ServoUrl::parse("about:blank").unwrap(),
+            url: url.unwrap_or(ServoUrl::parse("about:blank").unwrap()),
             document_state: DocumentState::default(),
             navigation_api_state,
             navigation_api_key: Uuid::new_v4(),
@@ -96,5 +134,20 @@ impl SessionHistoryEntry {
 impl PartialEq for SessionHistoryEntry {
     fn eq(&self, other: &SessionHistoryEntry) -> bool {
         self.navigation_api_key == other.navigation_api_key
+    }
+}
+
+impl Eq for SessionHistoryEntry {}
+
+impl Ord for SessionHistoryEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.document_state.document_id.0
+            .cmp(&other.document_state.document_id.0)
+    }
+}
+
+impl PartialOrd for SessionHistoryEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
