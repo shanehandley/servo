@@ -145,6 +145,7 @@ use crate::dom::selection::Selection;
 use crate::dom::storage::Storage;
 #[cfg(feature = "bluetooth")]
 use crate::dom::testrunner::TestRunner;
+use crate::dom::trustedtypepolicyfactory::TrustedTypePolicyFactory;
 use crate::dom::types::UIEvent;
 use crate::dom::webglrenderingcontext::WebGLCommandSender;
 #[cfg(feature = "webgpu")]
@@ -1695,6 +1696,11 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
     ) -> Fallible<()> {
         self.as_global_scope()
             .structured_clone(cx, value, options, retval)
+    }
+
+    /// <https://w3c.github.io/trusted-types/dist/spec/#extensions-to-the-windoworworkerglobalscope-interface>
+    fn TrustedTypes(&self) -> DomRoot<TrustedTypePolicyFactory> {
+        self.as_global_scope().trusted_types()
     }
 }
 

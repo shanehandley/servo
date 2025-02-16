@@ -51,6 +51,7 @@ use crate::dom::dedicatedworkerglobalscope::DedicatedWorkerGlobalScope;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::performance::Performance;
 use crate::dom::promise::Promise;
+use crate::dom::trustedtypepolicyfactory::TrustedTypePolicyFactory;
 #[cfg(feature = "webgpu")]
 use crate::dom::webgpu::identityhub::IdentityHub;
 use crate::dom::window::{base64_atob, base64_btoa};
@@ -472,6 +473,11 @@ impl WorkerGlobalScopeMethods<crate::DomTypeHolder> for WorkerGlobalScope {
     ) -> Fallible<()> {
         self.upcast::<GlobalScope>()
             .structured_clone(cx, value, options, retval)
+    }
+
+    /// <https://w3c.github.io/trusted-types/dist/spec/#extensions-to-the-windoworworkerglobalscope-interface>
+    fn TrustedTypes(&self) -> DomRoot<TrustedTypePolicyFactory> {
+        self.upcast::<GlobalScope>().trusted_types()
     }
 }
 
