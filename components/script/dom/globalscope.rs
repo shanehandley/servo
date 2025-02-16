@@ -72,6 +72,7 @@ use super::bindings::codegen::Bindings::WebGPUBinding::GPUDeviceLostReason;
 use super::bindings::error::Fallible;
 use super::bindings::trace::{HashMapTracedValues, RootedTraceableBox};
 use super::serviceworkerglobalscope::ServiceWorkerGlobalScope;
+use super::trustedtypepolicyfactory::TrustedTypePolicyFactory;
 use crate::dom::bindings::cell::{DomRefCell, RefMut};
 use crate::dom::bindings::codegen::Bindings::BroadcastChannelBinding::BroadcastChannelMethods;
 use crate::dom::bindings::codegen::Bindings::EventSourceBinding::EventSource_Binding::EventSourceMethods;
@@ -375,6 +376,9 @@ pub(crate) struct GlobalScope {
     #[ignore_malloc_size_of = "Rc<T> is hard"]
     notification_permission_request_callback_map:
         DomRefCell<HashMap<String, Rc<NotificationPermissionCallback>>>,
+
+    /// <https://w3c.github.io/trusted-types/dist/spec/#trustedtypepolicyfactory>
+    trusted_types: MutNullableDom<TrustedTypePolicyFactory>,
 }
 
 /// A wrapper for glue-code between the ipc router and the event-loop.
@@ -769,6 +773,7 @@ impl GlobalScope {
             byte_length_queuing_strategy_size_function: OnceCell::new(),
             count_queuing_strategy_size_function: OnceCell::new(),
             notification_permission_request_callback_map: Default::default(),
+            trusted_types: Default::default(),
         }
     }
 
@@ -2144,6 +2149,11 @@ impl GlobalScope {
 
     pub(crate) fn crypto(&self) -> DomRoot<Crypto> {
         self.crypto.or_init(|| Crypto::new(self, CanGc::note()))
+    }
+
+    pub(crate) fn trusted_types(&self) -> DomRoot<TrustedTypePolicyFactory> {
+        self.trusted_types
+            .or_init(|| TrustedTypePolicyFactory::new(self))
     }
 
     pub(crate) fn live_devtools_updates(&self) -> bool {

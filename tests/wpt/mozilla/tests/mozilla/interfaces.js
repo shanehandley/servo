@@ -49,6 +49,8 @@ function test_interfaces(interfaceNamesInGlobalScope) {
       "Symbol",
       "SyntaxError",
       "TextMetrics",
+      "TrustedScriptURL",
+      "TrustedTypePolicyFactory",
       "TypeError",
       "URIError",
       "Uint16Array",
