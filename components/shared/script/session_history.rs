@@ -49,7 +49,7 @@ impl Default for NestedHistoryId {
 #[derive(Clone, Debug, Default)]
 pub struct NestedHistory {
     id: NestedHistoryId,
-    entries: Vec<SessionHistoryEntry>
+    entries: Vec<SessionHistoryEntry>,
 }
 
 impl NestedHistory {
@@ -69,6 +69,7 @@ pub struct DocumentState {
     pub document_referrer_policy: ReferrerPolicy,
     pub reload_pending: bool,
     pub nested_histories: Vec<NestedHistory>,
+    pub navigable_target_name: Option<String>,
 }
 
 /// <https://html.spec.whatwg.org/multipage/#she-step>
@@ -97,22 +98,19 @@ pub enum ScrollRestorationMode {
 pub struct SessionHistoryEntry {
     pub step: SessionHistoryEntryStep,
     url: ServoUrl,
-    navigation_api_state: StructuredSerializedData,
+    navigation_api_state: Option<StructuredSerializedData>,
     pub document_state: DocumentState,
     navigation_api_key: Uuid,
     scroll_restoration_mode: ScrollRestorationMode,
 }
 
 impl SessionHistoryEntry {
-    pub fn new(
-        navigation_api_state: StructuredSerializedData,
-        url: Option<ServoUrl>,
-    ) -> SessionHistoryEntry {
+    pub fn new(url: Option<ServoUrl>, document_state: DocumentState) -> SessionHistoryEntry {
         SessionHistoryEntry {
             step: SessionHistoryEntryStep::default(),
             url: url.unwrap_or(ServoUrl::parse("about:blank").unwrap()),
-            document_state: DocumentState::default(),
-            navigation_api_state,
+            document_state,
+            navigation_api_state: None,
             navigation_api_key: Uuid::new_v4(),
             scroll_restoration_mode: ScrollRestorationMode::default(),
         }
@@ -122,12 +120,12 @@ impl SessionHistoryEntry {
         self.navigation_api_key.clone()
     }
 
-    pub fn navigation_api_state(&self) -> StructuredSerializedData {
+    pub fn navigation_api_state(&self) -> Option<StructuredSerializedData> {
         self.navigation_api_state.clone()
     }
 
     pub fn set_navigation_api_state(&mut self, state: StructuredSerializedData) {
-        self.navigation_api_state = state;
+        self.navigation_api_state = Some(state);
     }
 }
 
@@ -141,7 +139,9 @@ impl Eq for SessionHistoryEntry {}
 
 impl Ord for SessionHistoryEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.document_state.document_id.0
+        self.document_state
+            .document_id
+            .0
             .cmp(&other.document_state.document_id.0)
     }
 }

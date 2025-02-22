@@ -285,7 +285,7 @@ impl Navigation {
 
         // Step 9. Let navigable be document's node navigable
         // Step 10. Let traversable be navigable's traversable navigable.
-        // TODO assuming document
+        // TODO Get the navigable
 
         // Step 11. Let sourceSnapshotParams be the result of snapshotting source snapshot params
         // given document.
@@ -294,16 +294,16 @@ impl Navigation {
         // Step 12. Append the following session history traversal steps to traversable:
         // Step 12.1. Let navigableSHEs be the result of getting session history entries given
         // navigable.
-        let navigable_shes: BTreeSet<SessionHistoryEntry> =
-            document.get_session_history_entries().to_owned();
+        // let navigable_shes: BTreeSet<SessionHistoryEntry> =
+        //     document.get_session_history_entries().to_owned();
 
         // Step 12.2 Let targetSHE be the session history entry in navigableSHEs whose navigation API
         // key is key. If no such entry exists, then:
-        let maybe_target_she = navigable_shes
-            .iter()
-            .find(|ref entry| entry.navigation_api_key().as_bytes() == stringified_key.as_bytes());
+        // let maybe_target_she = navigable_shes
+        //     .iter()
+        //     .find(|ref entry| entry.navigation_api_key().as_bytes() == stringified_key.as_bytes());
 
-        if maybe_target_she.is_none() {
+        // if maybe_target_she.is_none() {
             // Step 12.2.1. Queue a global task on the navigation and traversal task source
             // given navigation's relevant global object to reject the finished promise for
             // apiMethodTracker with an "InvalidStateError" DOMException.
@@ -311,48 +311,48 @@ impl Navigation {
 
             // Step 12.2.2. Abort these steps.
             // TODO should be via task
-            return self.early_error_result(Error::InvalidState);
-        }
+        //     return self.early_error_result(Error::InvalidState);
+        // }
 
-        let target_she = maybe_target_she.unwrap();
+        // let target_she = maybe_target_she.unwrap();
 
-        let browsing_context = match document.browsing_context() {
-            Some(bc) => bc,
-            None => {
-                return self.early_error_result(Error::InvalidState);
-            },
-        };
+        // let browsing_context = match document.browsing_context() {
+        //     Some(bc) => bc,
+        //     None => {
+        //         return self.early_error_result(Error::InvalidState);
+        //     },
+        // };
 
         // Step 12.3. If targetSHE is navigable's active session history entry, then abort these
         // steps.
-        if browsing_context.is_active_session_history_entry(&target_she) {
-            return self.early_error_result(Error::InvalidState);
-        }
+        // if browsing_context.is_active_session_history_entry(&target_she) {
+        //     return self.early_error_result(Error::InvalidState);
+        // }
 
         // Step 12.4. Let result be the result of applying the traverse history step given by
         // targetSHE's step to traversable, given sourceSnapshotParams, navigable, and "none".
-        let step = match target_she.step {
-            SessionHistoryEntryStep::Integer(i) => i,
-            _ => {
-                return self.early_error_result(Error::InvalidState);
-            },
-        };
+        // let step = match target_she.step {
+        //     SessionHistoryEntryStep::Integer(i) => i,
+        //     _ => {
+        //         return self.early_error_result(Error::InvalidState);
+        //     },
+        // };
 
-        let result = document.apply_history_step(step, Some(source_snapshot_params), None);
+        // let result = document.apply_history_step(step, Some(source_snapshot_params), None);
 
-        match result {
-            // Step 12.5. If result is "canceled-by-beforeunload", then queue a global task on the
-            // navigation and traversal task source given navigation's relevant global object to
-            // reject the finished promise for apiMethodTracker with a new "AbortError" DOMException
-            // created in navigation's relevant realm.
-            HistoryApplicationResult::CancelledByBeforeUnload => {},
-            // Step 12.6. If result is "initiator-disallowed", then queue a global task on the
-            // navigation and traversal task source given navigation's relevant global object to
-            // reject the finished promise for apiMethodTracker with a new "SecurityError"
-            // DOMException created in navigation's relevant realm.
-            HistoryApplicationResult::InitiatorDisallowed => {},
-            _ => {},
-        }
+        // match result {
+        //     // Step 12.5. If result is "canceled-by-beforeunload", then queue a global task on the
+        //     // navigation and traversal task source given navigation's relevant global object to
+        //     // reject the finished promise for apiMethodTracker with a new "AbortError" DOMException
+        //     // created in navigation's relevant realm.
+        //     HistoryApplicationResult::CancelledByBeforeUnload => {},
+        //     // Step 12.6. If result is "initiator-disallowed", then queue a global task on the
+        //     // navigation and traversal task source given navigation's relevant global object to
+        //     // reject the finished promise for apiMethodTracker with a new "SecurityError"
+        //     // DOMException created in navigation's relevant realm.
+        //     HistoryApplicationResult::InitiatorDisallowed => {},
+        //     _ => {},
+        // }
 
         // Step 13. Return a navigation API method tracker-derived result for apiMethodTracker.
         self.method_tracker_derived_result(api_method_tracker)
