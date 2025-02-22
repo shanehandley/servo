@@ -11,6 +11,7 @@ mod browsingcontext;
 mod constellation;
 mod event_loop;
 mod logging;
+mod navigable;
 mod pipeline;
 mod sandboxing;
 mod serviceworker;
