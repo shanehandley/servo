@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-// https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigation
+// https://html.spec.whatwg.org/multipage/#navigation
 
 [Exposed=Window]
 interface Navigation : EventTarget {
@@ -60,7 +60,7 @@ enum NavigationHistoryBehavior {
   "replace"
 };
 
-/// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigationtype>
+/// <https://html.spec.whatwg.org/multipage/#navigationtype>
 enum NavigationType {
  "push",
  "replace",

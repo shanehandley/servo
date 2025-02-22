@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::ptr;
 
 use base::id::{BrowsingContextId, PipelineId, TopLevelBrowsingContextId};
@@ -11,7 +11,6 @@ use embedder_traits::EmbedderMsg;
 use html5ever::local_name;
 use indexmap::map::IndexMap;
 use ipc_channel::ipc;
-use js::gc::HandleValue;
 use js::glue::{
     CreateWrapperProxyHandler, DeleteWrapperProxyHandler, GetProxyPrivate, GetProxyReservedSlot,
     ProxyTraps, SetProxyReservedSlot,
@@ -31,7 +30,6 @@ use js::rust::{get_object_class, Handle, MutableHandle, MutableHandleValue};
 use js::JSCLASS_IS_GLOBAL;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use net_traits::request::Referrer;
-use script_traits::session_history::SessionHistoryEntry;
 use script_traits::{
     AuxiliaryBrowsingContextLoadInfo, LoadData, LoadOrigin, NavigationHistoryBehavior,
     NewLayoutInfo, ScriptMsg,
@@ -48,7 +46,6 @@ use crate::dom::bindings::proxyhandler::set_property_descriptor;
 use crate::dom::bindings::reflector::{DomGlobal, DomObject, Reflector};
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::{DOMString, USVString};
-use crate::dom::bindings::structuredclone;
 use crate::dom::bindings::trace::JSTraceable;
 use crate::dom::bindings::utils::{get_array_index_from_id, AsVoidPtr};
 use crate::dom::dissimilaroriginwindow::DissimilarOriginWindow;
@@ -127,22 +124,6 @@ pub(crate) struct WindowProxy {
     /// The creator browsing context's origin.
     #[no_trace]
     creator_origin: Option<ImmutableOrigin>,
-
-    /// <https://html.spec.whatwg.org/multipage/#tn-current-session-history-step>
-    current_session_history_step: Cell<usize>,
-
-    /// <https://html.spec.whatwg.org/multipage/#tn-session-history-entries>
-    #[no_trace]
-    #[ignore_malloc_size_of = "todo"]
-    session_history_entries: Vec<SessionHistoryEntry>,
-
-    #[no_trace]
-    #[ignore_malloc_size_of = "todo"]
-    /// TODO: This can only be modified from the event loop of the active session history entry's
-    /// document.
-    ///
-    /// <https://html.spec.whatwg.org/multipage/#nav-active-history-entry>
-    active_session_history_entry: RefCell<SessionHistoryEntry>,
 }
 
 impl WindowProxy {
@@ -158,10 +139,6 @@ impl WindowProxy {
         let name = frame_element.map_or(DOMString::new(), |e| {
             e.get_string_attribute(&local_name!("name"))
         });
-
-        let cx = GlobalScope::get_cx();
-        let navigation_api_state =
-            structuredclone::write(cx, HandleValue::null(), None).expect("Failed to build state");
 
         WindowProxy {
             reflector: Reflector::new(),
@@ -179,12 +156,6 @@ impl WindowProxy {
             creator_base_url: creator.base_url,
             creator_url: creator.url,
             creator_origin: creator.origin,
-            current_session_history_step: Cell::new(0),
-            session_history_entries: vec![],
-            active_session_history_entry: RefCell::new(SessionHistoryEntry::new(
-                navigation_api_state,
-                None,
-            )),
         }
     }
 
@@ -574,6 +545,7 @@ impl WindowProxy {
     }
 
     // https://html.spec.whatwg.org/multipage/#the-rules-for-choosing-a-browsing-context-given-a-browsing-context-name
+    // TODO(Navigable) this has moved into nevigable (The rules for choosing a navigable)
     pub(crate) fn choose_browsing_context(
         &self,
         name: DOMString,
@@ -584,6 +556,8 @@ impl WindowProxy {
                 // Step 3.
                 (Some(DomRoot::from_ref(self)), false)
             },
+            // Step 5. Otherwise, if name is an ASCII case-insensitive match for "_parent", set
+            // chosen to currentNavigable's parent, if any, and currentNavigable otherwise.
             "_parent" => {
                 // Step 4
                 if let Some(parent) = self.parent() {
@@ -591,8 +565,9 @@ impl WindowProxy {
                 }
                 (None, false)
             },
+            // Step 6. Otherwise, if name is an ASCII case-insensitive match for "_top", set
+            // chosen to currentNavigable's traversable navigable.
             "_top" => {
-                // Step 5
                 (Some(DomRoot::from_ref(self.top())), false)
             },
             "_blank" => (self.create_auxiliary_browsing_context(name, noopener), true),
@@ -743,15 +718,6 @@ impl WindowProxy {
 
     pub(crate) fn set_name(&self, name: DOMString) {
         *self.name.borrow_mut() = name;
-    }
-
-    pub fn set_active_session_history_entry(&self, entry: SessionHistoryEntry) {
-        *self.active_session_history_entry.borrow_mut() = entry;
-    }
-
-    pub fn is_active_session_history_entry(&self, other: &SessionHistoryEntry) -> bool {
-        // TODO(NavigationAPI)
-        &self.active_session_history_entry.borrow().clone() == other
     }
 }
 

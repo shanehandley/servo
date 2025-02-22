@@ -10,7 +10,9 @@ use std::cmp::Eq;
 
 use indexmap::IndexMap;
 use script_traits::session_history::{SessionHistoryEntry, SessionHistoryEntryStep};
-use script_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior as ScriptNavigationHistoryBehavior, StructuredSerializedData};
+use script_traits::{LoadData, LoadOrigin,
+    NavigationHistoryBehavior as ScriptNavigationHistoryBehavior, StructuredSerializedData
+};
 use servo_atoms::Atom;
 // use js::gc::HandleValue;
 // use js::jsapi::Heap;
@@ -114,10 +116,10 @@ pub struct Navigation {
     ///
     /// <https://html.spec.whatwg.org/multipage/#navigation-current-entry-index>
     current_entry_index: Cell<Option<usize>>,
-    /// https://html.spec.whatwg.org/multipage/#ongoing-navigate-event
+    /// <https://html.spec.whatwg.org/multipage/#ongoing-navigate-event>
     ongoing_event: Option<NavigateEvent>,
     transition: Option<DomRoot<NavigationTransition>>,
-    /// https://html.spec.whatwg.org/multipage/#navigation-activation
+    /// <https://html.spec.whatwg.org/multipage/#navigation-activation>
     activation: Option<DomRoot<NavigationActivation>>,
     focus_changed: bool,
     suppress_scroll: bool,
@@ -161,7 +163,7 @@ impl Navigation {
         }
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#has-entries-and-events-disabled>
+    /// <https://html.spec.whatwg.org/multipage/#has-entries-and-events-disabled>
     fn has_entries_and_events_disabled(&self) -> bool {
         // Step 1: Let document be navigation's relevant global object's associated Document.
         let document = &self.window.Document();
@@ -187,7 +189,7 @@ impl Navigation {
     /// An early error result for an exception e is a NavigationResult dictionary instance given by
     /// «[ "committed" → a promise rejected with e, "finished" → a promise rejected with e ]».
     ///
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigation-api-early-error-result>
+    /// <https://html.spec.whatwg.org/multipage/#navigation-api-early-error-result>
     fn early_error_result(&self, error: Error) -> NavigationResult {
         let mut result = NavigationResult::empty();
 
@@ -211,7 +213,7 @@ impl Navigation {
 
         let promise = Promise::new(&self.global(), CanGc::note());
 
-        promise.resolve_native(&result);
+        promise.resolve_native(&result, CanGc::note());
 
         result.committed = Some(entry.committed_promise);
         result.finished = Some(entry.finished_promise);
@@ -219,7 +221,7 @@ impl Navigation {
         result
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#performing-a-navigation-api-traversal>
+    /// <https://html.spec.whatwg.org/multipage/#performing-a-navigation-api-traversal>
     #[allow(unsafe_code)]
     fn perform_a_navigation_api_traversal(
         &self,
@@ -253,7 +255,7 @@ impl Navigation {
 
                 let promise = Promise::new(&self.global(), CanGc::note());
 
-                promise.resolve_native(&entry);
+                promise.resolve_native(&entry, CanGc::note());
 
                 result.committed = Some(promise.clone());
                 result.finished = Some(promise);
@@ -285,7 +287,7 @@ impl Navigation {
 
         // Step 9. Let navigable be document's node navigable
         // Step 10. Let traversable be navigable's traversable navigable.
-        // TODO assuming document
+        // TODO Get the navigable
 
         // Step 11. Let sourceSnapshotParams be the result of snapshotting source snapshot params
         // given document.
@@ -294,65 +296,65 @@ impl Navigation {
         // Step 12. Append the following session history traversal steps to traversable:
         // Step 12.1. Let navigableSHEs be the result of getting session history entries given
         // navigable.
-        let navigable_shes: BTreeSet<SessionHistoryEntry> =
-            document.get_session_history_entries().to_owned();
+        // let navigable_shes: BTreeSet<SessionHistoryEntry> =
+        //     document.get_session_history_entries().to_owned();
 
         // Step 12.2 Let targetSHE be the session history entry in navigableSHEs whose navigation API
         // key is key. If no such entry exists, then:
-        let maybe_target_she = navigable_shes
-            .iter()
-            .find(|ref entry| entry.navigation_api_key().as_bytes() == stringified_key.as_bytes());
+        // let maybe_target_she = navigable_shes
+        //     .iter()
+        //     .find(|ref entry| entry.navigation_api_key().as_bytes() == stringified_key.as_bytes());
 
-        if maybe_target_she.is_none() {
-            // Step 12.2.1. Queue a global task on the navigation and traversal task source
-            // given navigation's relevant global object to reject the finished promise for
-            // apiMethodTracker with an "InvalidStateError" DOMException.
-            // TODO
+        // if maybe_target_she.is_none() {
+        // Step 12.2.1. Queue a global task on the navigation and traversal task source
+        // given navigation's relevant global object to reject the finished promise for
+        // apiMethodTracker with an "InvalidStateError" DOMException.
+        // TODO
 
-            // Step 12.2.2. Abort these steps.
-            // TODO should be via task
-            return self.early_error_result(Error::InvalidState);
-        }
+        // Step 12.2.2. Abort these steps.
+        // TODO should be via task
+        //     return self.early_error_result(Error::InvalidState);
+        // }
 
-        let target_she = maybe_target_she.unwrap();
+        // let target_she = maybe_target_she.unwrap();
 
-        let browsing_context = match document.browsing_context() {
-            Some(bc) => bc,
-            None => {
-                return self.early_error_result(Error::InvalidState);
-            },
-        };
+        // let browsing_context = match document.browsing_context() {
+        //     Some(bc) => bc,
+        //     None => {
+        //         return self.early_error_result(Error::InvalidState);
+        //     },
+        // };
 
         // Step 12.3. If targetSHE is navigable's active session history entry, then abort these
         // steps.
-        if browsing_context.is_active_session_history_entry(&target_she) {
-            return self.early_error_result(Error::InvalidState);
-        }
+        // if browsing_context.is_active_session_history_entry(&target_she) {
+        //     return self.early_error_result(Error::InvalidState);
+        // }
 
         // Step 12.4. Let result be the result of applying the traverse history step given by
         // targetSHE's step to traversable, given sourceSnapshotParams, navigable, and "none".
-        let step = match target_she.step {
-            SessionHistoryEntryStep::Integer(i) => i,
-            _ => {
-                return self.early_error_result(Error::InvalidState);
-            },
-        };
+        // let step = match target_she.step {
+        //     SessionHistoryEntryStep::Integer(i) => i,
+        //     _ => {
+        //         return self.early_error_result(Error::InvalidState);
+        //     },
+        // };
 
-        let result = document.apply_history_step(step, Some(source_snapshot_params), None);
+        // let result = document.apply_history_step(step, Some(source_snapshot_params), None);
 
-        match result {
-            // Step 12.5. If result is "canceled-by-beforeunload", then queue a global task on the
-            // navigation and traversal task source given navigation's relevant global object to
-            // reject the finished promise for apiMethodTracker with a new "AbortError" DOMException
-            // created in navigation's relevant realm.
-            HistoryApplicationResult::CancelledByBeforeUnload => {},
-            // Step 12.6. If result is "initiator-disallowed", then queue a global task on the
-            // navigation and traversal task source given navigation's relevant global object to
-            // reject the finished promise for apiMethodTracker with a new "SecurityError"
-            // DOMException created in navigation's relevant realm.
-            HistoryApplicationResult::InitiatorDisallowed => {},
-            _ => {},
-        }
+        // match result {
+        //     // Step 12.5. If result is "canceled-by-beforeunload", then queue a global task on the
+        //     // navigation and traversal task source given navigation's relevant global object to
+        //     // reject the finished promise for apiMethodTracker with a new "AbortError" DOMException
+        //     // created in navigation's relevant realm.
+        //     HistoryApplicationResult::CancelledByBeforeUnload => {},
+        //     // Step 12.6. If result is "initiator-disallowed", then queue a global task on the
+        //     // navigation and traversal task source given navigation's relevant global object to
+        //     // reject the finished promise for apiMethodTracker with a new "SecurityError"
+        //     // DOMException created in navigation's relevant realm.
+        //     HistoryApplicationResult::InitiatorDisallowed => {},
+        //     _ => {},
+        // }
 
         // Step 13. Return a navigation API method tracker-derived result for apiMethodTracker.
         self.method_tracker_derived_result(api_method_tracker)
@@ -370,7 +372,7 @@ impl Navigation {
         let finished_promise = Promise::new(&self.global(), CanGc::note());
 
         // Step 2. Mark as handled finishedPromise.
-        finished_promise.resolve_native(&());
+        finished_promise.resolve_native(&(), CanGc::note());
 
         // Step 3. Let apiMethodTracker be a new navigation API method tracker with:
         let tracker = NavigationApiMethodTracker::new(
@@ -395,7 +397,7 @@ impl Navigation {
 
     /// TODO: Account for info: JavaScript value
     ///
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#maybe-set-the-upcoming-non-traverse-api-method-tracker>
+    /// <https://html.spec.whatwg.org/multipage/#maybe-set-the-upcoming-non-traverse-api-method-tracker>
     fn maybe_set_the_upcoming_non_traverse_api_method_tracker(
         &self,
         state: Option<StructuredSerializedData>,
@@ -406,7 +408,7 @@ impl Navigation {
         let finished_promise = Promise::new(&self.global(), CanGc::note());
 
         // Step 2. Mark as handled finishedPromise.
-        finished_promise.resolve_native(&());
+        finished_promise.resolve_native(&(), CanGc::note());
 
         // Step 3. Let apiMethodTracker be a new navigation API method tracker with:
         let api_method_tracker = NavigationApiMethodTracker::new(
@@ -444,7 +446,7 @@ impl Navigation {
 
 #[allow(non_snake_case)]
 impl NavigationMethods<crate::DomTypeHolder> for Navigation {
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-entries>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-entries>
     fn Entries(&self) -> Vec<DomRoot<NavigationHistoryEntry>> {
         // Step 1: If this has entries and events disabled, then return the empty list.
         if self.has_entries_and_events_disabled() {
@@ -455,13 +457,13 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         self.entry_list.clone()
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigation-current-entry>
+    /// <https://html.spec.whatwg.org/multipage/#navigation-current-entry>
     fn GetCurrentEntry(&self) -> Option<DomRoot<NavigationHistoryEntry>> {
-        // https://html.spec.whatwg.org/multipage/nav-history-apis.html#initialize-the-navigation-api-entries-for-a-new-document
-        // https://html.spec.whatwg.org/multipage/browsing-the-web.html#updating-the-document:initialize-the-navigation-api-entries-for-a-new-document
+        // https://html.spec.whatwg.org/multipage/#initialize-the-navigation-api-entries-for-a-new-document
+        // https://html.spec.whatwg.org/multipage/#updating-the-document:initialize-the-navigation-api-entries-for-a-new-document
         //
-        // https://html.spec.whatwg.org/multipage/document-sequences.html#creating-a-new-top-level-traversable
-        // https://html.spec.whatwg.org/multipage/document-sequences.html#initialize-the-navigable
+        // https://html.spec.whatwg.org/multipage/#creating-a-new-top-level-traversable
+        // https://html.spec.whatwg.org/multipage/#initialize-the-navigable
 
         // Step 1: If navigation has entries and events disabled, then return null.
         if self.has_entries_and_events_disabled() {
@@ -481,7 +483,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         None
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-updatecurrententry>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-updatecurrententry>
     fn UpdateCurrentEntry(
         &self,
         options: RootedTraceableBox<NavigationUpdateCurrentEntryOptions>,
@@ -519,7 +521,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         Ok(())
     }
 
-    /// <https://html.spec.whatwg.org/multipage/dom-navigation-transition>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-transition>
     fn GetTransition(&self) -> Option<DomRoot<NavigationTransition>> {
         self.transition.clone()
     }
@@ -546,7 +548,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         }
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-cangoforward>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-cangoforward>
     fn CanGoForward(&self) -> bool {
         // Step 1. If this has entries and events disabled, then return false.
         if self.has_entries_and_events_disabled() {
@@ -564,7 +566,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         }
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-navigate>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-navigate>
     fn Navigate(
         &self,
         url: USVString,
@@ -680,7 +682,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         self.method_tracker_derived_result(api_method_tracker)
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-reload>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-reload>
     fn Reload(
         &self,
         options: RootedTraceableBox<NavigationReloadOptions>,
@@ -714,7 +716,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         Ok(self.method_tracker_derived_result(api_method_tracker))
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-traverseto>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-traverseto>
     fn TraverseTo(
         &self,
         _key: DOMString,
@@ -743,7 +745,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         }
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-back>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-back>
     fn Back(&self, options: RootedTraceableBox<NavigationOptions>) -> NavigationResult {
         match self.current_entry_index.get() {
             None => self.early_error_result(Error::InvalidState),
@@ -765,7 +767,7 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         }
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigation-forward>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigation-forward>
     fn Forward(&self, options: RootedTraceableBox<NavigationOptions>) -> NavigationResult {
         // Step 1
         match self.current_entry_index.get() {
@@ -786,23 +788,23 @@ impl NavigationMethods<crate::DomTypeHolder> for Navigation {
         }
     }
 
-    // <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigate>
+    // <https://html.spec.whatwg.org/multipage/#handler-navigation-onnavigate>
     event_handler!(navigate, GetOnnavigate, SetOnnavigate);
 
-    // <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigatesuccess>
+    // <https://html.spec.whatwg.org/multipage/#handler-navigation-onnavigatesuccess>
     event_handler!(navigatesuccess, GetOnnavigatesuccess, SetOnnavigatesuccess);
 
     // error_event_handler!(navigateerror, GetOnnavigateerror, SetOnnavigateerror);
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigateerror>
+    /// <https://html.spec.whatwg.org/multipage/#handler-navigation-onnavigateerror>
     fn GetOnnavigateerror(&self) -> Option<Rc<EventHandlerNonNull>> {
         None
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-onnavigateerror>
+    /// <https://html.spec.whatwg.org/multipage/#handler-navigation-onnavigateerror>
     fn SetOnnavigateerror(&self, _value: Option<Rc<EventHandlerNonNull>>) {}
 
-    // <https://html.spec.whatwg.org/multipage/nav-history-apis.html#handler-navigation-oncurrententrychange>
+    // <https://html.spec.whatwg.org/multipage/#handler-navigation-oncurrententrychange>
     event_handler!(
         currententrychange,
         GetOncurrententrychange,

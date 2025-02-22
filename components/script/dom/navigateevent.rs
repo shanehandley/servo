@@ -20,7 +20,7 @@ use crate::dom::bindings::codegen::Bindings::NavigationBinding::NavigationType;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
 use crate::dom::bindings::error::{Error, Fallible};
 use crate::dom::bindings::inheritance::Castable;
-use crate::dom::bindings::reflector::{reflect_dom_object_with_proto, DomGlobal, DomObject};
+use crate::dom::bindings::reflector::{reflect_dom_object_with_proto, DomGlobal};
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::bindings::trace::RootedTraceableBox;
@@ -30,7 +30,7 @@ use crate::dom::navigationdestination::NavigationDestination;
 use crate::dom::window::Window;
 use crate::script_runtime::{CanGc, JSContext};
 
-/// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#concept-navigateevent-interception-state>
+/// <https://html.spec.whatwg.org/multipage/#concept-navigateevent-interception-state>
 #[derive(Clone, JSTraceable, MallocSizeOf, PartialEq)]
 pub enum InterceptionState {
     None,
@@ -40,7 +40,7 @@ pub enum InterceptionState {
     Finished,
 }
 
-/// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigateevent>
+/// <https://html.spec.whatwg.org/multipage/#navigateevent>
 #[dom_struct]
 pub struct NavigateEvent {
     event: Event,
@@ -116,7 +116,7 @@ impl NavigateEvent {
         NavigateEvent::new_with_proto(window, proto, type_, &init, can_gc)
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigateevent-perform-shared-checks>
+    /// <https://html.spec.whatwg.org/multipage/#navigateevent-perform-shared-checks>
     fn perform_shared_checks(&self) -> Fallible<()> {
         let global = self.global();
         let window = global.as_window();
@@ -142,7 +142,7 @@ impl NavigateEvent {
         Ok(())
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#process-scroll-behavior>
+    /// <https://html.spec.whatwg.org/multipage/#process-scroll-behavior>
     fn process_scroll_behavior(&self) {
         // Step 1. Assert: event's interception state is "committed".
         // debug_assert_eq!(self.interception_state(), InterceptionState::Committed);
@@ -186,17 +186,17 @@ impl NavigateEvent {
 }
 
 impl NavigateEventMethods<crate::DomTypeHolder> for NavigateEvent {
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-navigationtype>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-navigationtype>
     fn NavigationType(&self) -> NavigationType {
         self.navigation_type.clone()
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-destination>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-destination>
     fn Destination(&self) -> DomRoot<NavigationDestination> {
         self.destination.clone()
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-canintercept>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-canintercept>
     fn CanIntercept(&self) -> bool {
         self.can_intercept.borrow().clone()
     }
@@ -209,17 +209,17 @@ impl NavigateEventMethods<crate::DomTypeHolder> for NavigateEvent {
         self.user_initiated.borrow().clone()
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-hashchange>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-hashchange>
     fn HashChange(&self) -> bool {
         self.hash_change.borrow().clone()
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-formdata>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-formdata>
     fn GetFormData(&self) -> Option<DomRoot<FormData>> {
         self.form_data.clone()
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-downloadrequest>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-downloadrequest>
     fn GetDownloadRequest(&self) -> Option<DOMString> {
         self.download_request.borrow().clone()
     }
@@ -228,17 +228,17 @@ impl NavigateEventMethods<crate::DomTypeHolder> for NavigateEvent {
     /// this navigation, or undefined if the navigation was initiated by the user or by a different
     /// API.
     ///
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-info>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-info>
     fn Info(&self, _cx: JSContext, _retval: MutableHandleValue) {
         todo!()
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-hasuavisualtransition>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-hasuavisualtransition>
     fn HasUAVisualTransition(&self) -> bool {
         self.has_ua_visible_transitions.borrow().clone()
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-intercept>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-intercept>
     fn Intercept(&self, options: &NavigationInterceptOptions) -> Fallible<()> {
         // Step 1. Perform shared checks given this.
         self.perform_shared_checks()?;
@@ -299,7 +299,7 @@ impl NavigateEventMethods<crate::DomTypeHolder> for NavigateEvent {
         Ok(())
     }
 
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigateevent-scroll>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigateevent-scroll>
     fn Scroll(&self) -> Fallible<()> {
         // Step 1. Perform shared checks given this.
         self.perform_shared_checks()?;
@@ -316,10 +316,12 @@ impl NavigateEventMethods<crate::DomTypeHolder> for NavigateEvent {
         Ok(())
     }
 
+    /// <https://dom.spec.whatwg.org/#dom-event-istrusted>
     fn IsTrusted(&self) -> bool {
         self.upcast::<Event>().IsTrusted()
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#the-navigateevent-interface>
     fn Constructor(
         window: &Window,
         proto: Option<HandleObject>,

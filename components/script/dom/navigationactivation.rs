@@ -12,7 +12,7 @@ use crate::dom::bindings::reflector::Reflector;
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::navigationhistoryentry::NavigationHistoryEntry;
 
-/// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigationactivation>
+/// <https://html.spec.whatwg.org/multipage/#navigationactivation>
 #[dom_struct]
 pub struct NavigationActivation {
     reflector_: Reflector,

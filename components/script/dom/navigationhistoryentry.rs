@@ -21,7 +21,7 @@ use crate::dom::document::Document;
 use crate::dom::eventtarget::EventTarget;
 use crate::script_runtime::JSContext;
 
-/// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigationhistoryentry>
+/// <https://html.spec.whatwg.org/multipage/#navigationhistoryentry>
 #[dom_struct]
 pub struct NavigationHistoryEntry {
     event_target: EventTarget,
@@ -50,7 +50,7 @@ impl NavigationHistoryEntry {
 }
 
 impl NavigationHistoryEntryMethods<crate::DomTypeHolder> for NavigationHistoryEntry {
-    /// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigationhistoryentry-url>
+    /// <https://html.spec.whatwg.org/multipage/#dom-navigationhistoryentry-url>
     fn GetUrl(&self) -> Option<USVString> {
         // Step 1. Let document be this's relevant global object's associated Document.
         let document = self.document();

@@ -2,12 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use core::cell::RefCell;
 use std::cmp::{Ord, PartialOrd};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use malloc_size_of_derive::MallocSizeOf;
 use serde::{Deserialize, Serialize};
-use servo_url::ServoUrl;
+use servo_url::{ImmutableOrigin, MutableOrigin, ServoUrl};
 use uuid::Uuid;
 
 use crate::{ReferrerPolicy, StructuredSerializedData};
@@ -49,7 +50,7 @@ impl Default for NestedHistoryId {
 #[derive(Clone, Debug, Default)]
 pub struct NestedHistory {
     id: NestedHistoryId,
-    entries: Vec<SessionHistoryEntry>
+    entries: Vec<SessionHistoryEntry>,
 }
 
 impl NestedHistory {
@@ -62,13 +63,46 @@ impl NestedHistory {
     }
 }
 
+/// Holds state inside a session history entry regarding how to present and, if necessary, recreate,
+/// a Document. 
+///
 /// <https://html.spec.whatwg.org/multipage/#document-state-2>
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct DocumentState {
     pub document_id: DocumentId,
     pub document_referrer_policy: ReferrerPolicy,
     pub reload_pending: bool,
+    /// A list of nested histories, initially an empty list.
     pub nested_histories: Vec<NestedHistory>,
+    pub navigable_target_name: Option<String>,
+    pub initiator_origin: Option<MutableOrigin>,
+    pub origin: ImmutableOrigin,
+    pub about_base_url: Option<ServoUrl>,
+    pub request_referrer_policy: ReferrerPolicy
+}
+
+
+impl DocumentState {
+    pub fn new(
+        document_id: DocumentId,
+        document_referrer_policy: ReferrerPolicy,
+        navigable_target_name: Option<String>,
+        initiator_origin: Option<MutableOrigin>,
+        origin: ImmutableOrigin,
+        about_base_url: Option<ServoUrl>,
+    ) -> DocumentState {
+        DocumentState {
+            document_id,
+            document_referrer_policy,
+            reload_pending: false,
+            nested_histories: vec![],
+            navigable_target_name,
+            initiator_origin,
+            origin,
+            about_base_url,
+            request_referrer_policy: ReferrerPolicy::default(),
+        }
+    }
 }
 
 /// <https://html.spec.whatwg.org/multipage/#she-step>
@@ -95,39 +129,40 @@ pub enum ScrollRestorationMode {
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct SessionHistoryEntry {
-    pub step: SessionHistoryEntryStep,
+    pub step: RefCell<SessionHistoryEntryStep>,
     url: ServoUrl,
-    navigation_api_state: StructuredSerializedData,
+    navigation_api_state: Option<StructuredSerializedData>,
     pub document_state: DocumentState,
     navigation_api_key: Uuid,
     scroll_restoration_mode: ScrollRestorationMode,
 }
 
 impl SessionHistoryEntry {
-    pub fn new(
-        navigation_api_state: StructuredSerializedData,
-        url: Option<ServoUrl>,
-    ) -> SessionHistoryEntry {
+    pub fn new(url: ServoUrl, document_state: DocumentState) -> SessionHistoryEntry {
         SessionHistoryEntry {
-            step: SessionHistoryEntryStep::default(),
-            url: url.unwrap_or(ServoUrl::parse("about:blank").unwrap()),
-            document_state: DocumentState::default(),
-            navigation_api_state,
+            step: RefCell::new(SessionHistoryEntryStep::default()),
+            url,
+            document_state,
+            navigation_api_state: None,
             navigation_api_key: Uuid::new_v4(),
             scroll_restoration_mode: ScrollRestorationMode::default(),
         }
+    }
+
+    pub fn set_step(&self, step: usize) {
+        *self.step.borrow_mut() = SessionHistoryEntryStep::Integer(step)
     }
 
     pub fn navigation_api_key(&self) -> Uuid {
         self.navigation_api_key.clone()
     }
 
-    pub fn navigation_api_state(&self) -> StructuredSerializedData {
+    pub fn navigation_api_state(&self) -> Option<StructuredSerializedData> {
         self.navigation_api_state.clone()
     }
 
     pub fn set_navigation_api_state(&mut self, state: StructuredSerializedData) {
-        self.navigation_api_state = state;
+        self.navigation_api_state = Some(state);
     }
 }
 
@@ -141,7 +176,9 @@ impl Eq for SessionHistoryEntry {}
 
 impl Ord for SessionHistoryEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.document_state.document_id.0
+        self.document_state
+            .document_id
+            .0
             .cmp(&other.document_state.document_id.0)
     }
 }

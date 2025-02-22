@@ -13,7 +13,7 @@ use crate::dom::bindings::root::DomRoot;
 use crate::dom::navigationhistoryentry::NavigationHistoryEntry;
 use crate::dom::promise::Promise;
 
-/// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigationtransition>
+/// <https://html.spec.whatwg.org/multipage/#navigationtransition>
 #[dom_struct]
 pub struct NavigationTransition {
     reflector_: Reflector,

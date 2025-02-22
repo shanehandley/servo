@@ -14,7 +14,7 @@ use crate::dom::bindings::str::{DOMString, USVString};
 use crate::dom::navigationhistoryentry::NavigationHistoryEntry;
 use crate::script_runtime::JSContext;
 
-/// <https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-navigationdestination-interface>
+/// <https://html.spec.whatwg.org/multipage/#the-navigationdestination-interface>
 #[dom_struct]
 pub struct NavigationDestination {
     reflector_: Reflector,
