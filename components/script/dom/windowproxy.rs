@@ -139,6 +139,7 @@ impl WindowProxy {
         let name = frame_element.map_or(DOMString::new(), |e| {
             e.get_string_attribute(&local_name!("name"))
         });
+
         WindowProxy {
             reflector: Reflector::new(),
             browsing_context_id,

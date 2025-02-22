@@ -447,7 +447,15 @@ pub(crate) mod mouseevent;
 pub(crate) mod mutationobserver;
 pub(crate) mod mutationrecord;
 pub(crate) mod namednodemap;
+pub(crate) mod navigateevent;
+pub(crate) mod navigation;
+pub(crate) mod navigationactivation;
+pub(crate) mod navigationcurrententrychangeevent;
+pub(crate) mod navigationdestination;
+pub(crate) mod navigationhistoryentry;
 pub(crate) mod navigationpreloadmanager;
+pub(crate) mod navigationtransition;
+// pub(crate) mod navigationpreloadmanager;
 pub(crate) mod navigator;
 pub(crate) mod navigatorinfo;
 #[allow(dead_code)]

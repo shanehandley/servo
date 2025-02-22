@@ -493,6 +493,8 @@ pub enum CoreResourceMsg {
         CookieSource,
     ),
     DeleteCookies(ServoUrl),
+    /// Get a navigation state
+    ///
     /// Get a history state by a given history state id
     GetHistoryState(HistoryStateId, IpcSender<Option<Vec<u8>>>),
     /// Set a history state for a given history state id
