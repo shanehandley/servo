@@ -276,6 +276,15 @@ pub(crate) enum DeclarativeRefresh {
 pub(crate) type WebGPUContextsMap =
     Rc<RefCell<HashMapTracedValues<WebGPUContextId, WeakRef<GPUCanvasContext>>>>;
 
+#[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
+pub struct DocumentId(Uuid);
+
+impl Default for DocumentId {
+    fn default() -> Self {
+        Self(servo_rand::random_uuid())
+    }
+}
+
 /// <https://dom.spec.whatwg.org/#document>
 #[dom_struct]
 pub(crate) struct Document {
@@ -3775,6 +3784,7 @@ impl Document {
         let has_browsing_context = has_browsing_context == HasBrowsingContext::Yes;
 
         Document {
+            id: Default::default(),
             node: Node::new_document_node(),
             id: DocumentId::next(),
             document_or_shadow_root: DocumentOrShadowRoot::new(window),
