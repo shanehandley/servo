@@ -137,6 +137,7 @@ use net_traits::storage_thread::{StorageThreadMsg, StorageType};
 use net_traits::{self, IpcSend, ReferrerPolicy, ResourceThreads};
 use profile_traits::{mem, time};
 use script_layout_interface::{LayoutFactory, ScriptThreadFactory};
+use script_traits::session_history::{DocumentId as SessionHistoryDocumentId, DocumentState as SessionHistoryDocumentState, SessionHistoryEntry};
 use script_traits::{
     AnimationState, AnimationTickType, AuxiliaryBrowsingContextLoadInfo, BroadcastMsg,
     ConstellationInputEvent, DiscardBrowsingContext, DocumentActivity, DocumentState,
@@ -235,6 +236,9 @@ struct WebView {
 
     /// The joint session history for this webview.
     session_history: JointSessionHistory,
+
+    /// https://html.spec.whatwg.org/multipage/#nav-active-history-entry
+    active_session_history_entry: Option<SessionHistoryEntry>
 }
 
 /// A browsing context group.
@@ -2989,6 +2993,7 @@ where
             WebView {
                 focused_browsing_context_id: browsing_context_id,
                 session_history: JointSessionHistory::new(),
+                active_session_history_entry: None,
             },
         );
 
@@ -3361,8 +3366,21 @@ where
             script_sender,
             self.compositor_proxy.clone(),
             is_opener_throttled,
-            load_data,
+            load_data.clone(),
         );
+
+        let load_url = load_data.url.clone();
+
+        let state = SessionHistoryDocumentState::new(
+            SessionHistoryDocumentId::default(),
+            load_data.referrer_policy,
+            None,
+            None,
+            load_data.url.origin(),
+            None,
+        );
+
+        let session_history_entry = SessionHistoryEntry::new(load_url, state);
 
         assert!(!self.pipelines.contains_key(&new_pipeline_id));
         self.pipelines.insert(new_pipeline_id, pipeline);
@@ -3371,6 +3389,7 @@ where
             WebView {
                 focused_browsing_context_id: new_browsing_context_id,
                 session_history: JointSessionHistory::new(),
+                active_session_history_entry: Some(session_history_entry)
             },
         );
 

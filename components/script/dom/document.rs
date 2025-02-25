@@ -19,6 +19,7 @@ use base::cross_process_instant::CrossProcessInstant;
 use base::id::WebViewId;
 use canvas_traits::webgl::{self, WebGLContextId, WebGLMsg};
 use chrono::Local;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{self as csp, CspList, PolicyDisposition};
 use cookie::Cookie;
 use cssparser::match_ignore_ascii_case;
@@ -53,6 +54,7 @@ use percent_encoding::percent_decode;
 use profile_traits::ipc as profile_ipc;
 use profile_traits::time::{TimerMetadata, TimerMetadataFrameType, TimerMetadataReflowType};
 use script_layout_interface::{PendingRestyle, TrustedNodeAddress};
+use script_traits::session_history::DocumentId;
 use script_traits::{
     AnimationState, AnimationTickType, ConstellationInputEvent, DocumentActivity, ScriptMsg,
 };
@@ -94,6 +96,7 @@ use crate::dom::bindings::codegen::Bindings::EventBinding::Event_Binding::EventM
 use crate::dom::bindings::codegen::Bindings::HTMLIFrameElementBinding::HTMLIFrameElement_Binding::HTMLIFrameElementMethods;
 use crate::dom::bindings::codegen::Bindings::HTMLInputElementBinding::HTMLInputElementMethods;
 use crate::dom::bindings::codegen::Bindings::HTMLTextAreaElementBinding::HTMLTextAreaElementMethods;
+use crate::dom::bindings::codegen::Bindings::NavigationBinding::NavigationType;
 use crate::dom::bindings::codegen::Bindings::NavigatorBinding::Navigator_Binding::NavigatorMethods;
 use crate::dom::bindings::codegen::Bindings::NodeBinding::NodeMethods;
 use crate::dom::bindings::codegen::Bindings::NodeFilterBinding::NodeFilter;
@@ -277,6 +280,8 @@ pub(crate) type WebGPUContextsMap =
 #[dom_struct]
 pub(crate) struct Document {
     node: Node,
+    #[no_trace]
+    id: DocumentId,
     document_or_shadow_root: DocumentOrShadowRoot,
     window: Dom<Window>,
     implementation: MutNullableDom<DOMImplementation>,
@@ -411,6 +416,10 @@ pub(crate) struct Document {
     ignore_destructive_writes_counter: Cell<u32>,
     /// <https://html.spec.whatwg.org/multipage/#ignore-opens-during-unload-counter>
     ignore_opens_during_unload_counter: Cell<u32>,
+    /// Used to ignore certain operations while the below algorithms run. Initially set to zero.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/#unload-counter>
+    unload_counter: Cell<u32>,
     /// The number of spurious `requestAnimationFrame()` requests we've received.
     ///
     /// A rAF request is considered spurious if nothing was actually reflowed.
@@ -3635,6 +3644,7 @@ impl Document {
 
         Document {
             node: Node::new_document_node(),
+            id: DocumentId::next(),
             document_or_shadow_root: DocumentOrShadowRoot::new(window),
             window: Dom::from_ref(window),
             has_browsing_context,
@@ -3714,6 +3724,7 @@ impl Document {
             last_click_info: DomRefCell::new(None),
             ignore_destructive_writes_counter: Default::default(),
             ignore_opens_during_unload_counter: Default::default(),
+            unload_counter: Cell::new(0),
             spurious_animation_frames: Cell::new(0),
             dom_count: Cell::new(1),
             fullscreen_element: MutNullableDom::new(None),
@@ -4611,6 +4622,25 @@ impl Document {
     /// <https://html.spec.whatwg.org/multipage/#is-initial-about:blank>
     pub(crate) fn is_initial_about_blank(&self) -> bool {
         self.is_initial_about_blank.get()
+    }
+
+    /// Returns the internal unique id for this document
+    pub fn get_id(&self) -> DocumentId {
+        self.id.clone()
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#unload-counter>
+    pub fn increase_unload_counter(&self) {
+        self.unload_counter.set(self.unload_counter.get() + 1);
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#unload-counter>
+    pub fn get_unload_counter_value(&self) -> u32 {
+        self.unload_counter.get()
+    }
+
+    pub fn id(&self) -> DocumentId {
+        self.id.clone()
     }
 }
 
@@ -6234,4 +6264,34 @@ impl DocumentHelpers<crate::DomTypeHolder> for Document {
     fn ensure_safe_to_run_script_or_layout(&self) {
         Document::ensure_safe_to_run_script_or_layout(self)
     }
+}
+
+/// <https://html.spec.whatwg.org/multipage/#source-snapshot-params>
+pub struct SourceSnapshotParams {
+    has_transient_activation: bool,
+    sandboxing_flags: SandboxingFlagSet,
+    allows_downloading: bool,
+    source_policy_container: PolicyContainer,
+}
+
+impl SourceSnapshotParams {
+    /// <https://html.spec.whatwg.org/multipage/#snapshotting-source-snapshot-params>
+    pub fn snapshot(document: &Document) -> Self {
+        SourceSnapshotParams {
+            has_transient_activation: false,
+            sandboxing_flags: SandboxingFlagSet::empty(),
+            allows_downloading: false, // TODO implement in CSP crate
+            source_policy_container: document.policy_container().to_owned(),
+        }
+    }
+}
+
+/// The result of applying a history step to a navigable
+///
+/// <https://html.spec.whatwg.org/multipage/#apply-the-traverse-history-step>
+pub enum HistoryApplicationResult {
+    InitiatorDisallowed,
+    CancelledByBeforeUnload,
+    CancelledByNavigate,
+    Applied,
 }

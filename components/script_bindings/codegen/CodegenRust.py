@@ -78,7 +78,6 @@ def isDomInterface(t, logging=False):
         return True
     return t.isInterface() and (t.isGeckoInterface() or (t.isSpiderMonkeyInterface() and not t.isBufferSource()))
 
-
 def containsDomInterface(t, logging=False):
     if isinstance(t, IDLArgument):
         t = t.type
@@ -96,6 +95,8 @@ def containsDomInterface(t, logging=False):
         return any(map(lambda x: containsDomInterface(x), t.members)) or (t.parent and containsDomInterface(t.parent))
     if t.isSequence():
         return containsDomInterface(t.inner)
+    if t.isPromise():
+        return True
     return False
 
 

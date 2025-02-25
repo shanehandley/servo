@@ -139,6 +139,7 @@ impl WindowProxy {
         let name = frame_element.map_or(DOMString::new(), |e| {
             e.get_string_attribute(&local_name!("name"))
         });
+
         WindowProxy {
             reflector: Reflector::new(),
             browsing_context_id,
@@ -544,6 +545,7 @@ impl WindowProxy {
     }
 
     // https://html.spec.whatwg.org/multipage/#the-rules-for-choosing-a-browsing-context-given-a-browsing-context-name
+    // TODO(Navigable) this has moved into nevigable (The rules for choosing a navigable)
     pub(crate) fn choose_browsing_context(
         &self,
         name: DOMString,
@@ -554,6 +556,8 @@ impl WindowProxy {
                 // Step 3.
                 (Some(DomRoot::from_ref(self)), false)
             },
+            // Step 5. Otherwise, if name is an ASCII case-insensitive match for "_parent", set
+            // chosen to currentNavigable's parent, if any, and currentNavigable otherwise.
             "_parent" => {
                 // Step 4
                 if let Some(parent) = self.parent() {
@@ -561,8 +565,9 @@ impl WindowProxy {
                 }
                 (None, false)
             },
+            // Step 6. Otherwise, if name is an ASCII case-insensitive match for "_top", set
+            // chosen to currentNavigable's traversable navigable.
             "_top" => {
-                // Step 5
                 (Some(DomRoot::from_ref(self.top())), false)
             },
             "_blank" => (self.create_auxiliary_browsing_context(name, noopener), true),
