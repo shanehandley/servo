@@ -311,6 +311,7 @@ struct EventListenerEntry {
     listener: EventListenerType,
     once: bool,
     passive: Option<bool>,
+    capture: bool
 }
 
 impl std::cmp::PartialEq for EventListenerEntry {
@@ -507,6 +508,7 @@ impl EventTarget {
                         listener: EventListenerType::Inline(listener.into()),
                         once: false,
                         passive: None,
+                        capture: false,
                     });
                 }
             },
@@ -520,6 +522,17 @@ impl EventTarget {
         if let Some(entries) = handlers.get_mut(ty) {
             entries.retain(|e| e.listener != listener || !e.once)
         }
+    }
+
+    /// Determines the `capture` attribute of an associated event listener
+    pub(crate) fn is_capture(&self, ty: &Atom, listener: &Rc<EventListener>) -> bool {
+        let handlers = self.handlers.borrow();
+        let listener_instance = EventListenerType::Additive(listener.clone());
+
+        handlers
+            .get(ty)
+            .and_then(|entries| entries.iter().find(|e| e.listener == listener_instance))
+            .map_or(false, |entry| entry.capture)
     }
 
     /// Determines the `passive` attribute of an associated event listener
@@ -826,6 +839,7 @@ impl EventTarget {
             listener: EventListenerType::Additive(listener),
             once: options.once,
             passive: options.passive,
+            capture: options.parent.capture,
         };
         if !entry.contains(&new_entry) {
             entry.push(new_entry);
@@ -855,6 +869,7 @@ impl EventTarget {
                 listener: EventListenerType::Additive(listener.clone()),
                 once: false,
                 passive: None,
+                capture: false,
             };
             if let Some(position) = entry.iter().position(|e| *e == old_entry) {
                 entry.remove(position);

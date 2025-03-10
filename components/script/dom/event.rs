@@ -1208,7 +1208,7 @@ fn invoke(
 fn inner_invoke(
     event: &Event,
     listeners: &[CompiledEventListener],
-    _phase: ListenerPhase,
+    phase: ListenerPhase,
     invocation_target_in_shadow_tree: bool,
     timeline_window: Option<&Window>,
     can_gc: CanGc,
@@ -1234,16 +1234,25 @@ fn inner_invoke(
         // Step 2.2. Set found to true.
         found = true;
 
-        // TODO Step 2.3 If phase is "capturing" and listener’s capture is false, then continue.
-        // TODO Step 2.4 If phase is "bubbling" and listener’s capture is true, then continue.
-
         let event_target = event
             .GetCurrentTarget()
             .expect("event target was initialized as part of \"invoke\"");
 
-        // Step 2.5 If listener’s once is true, then remove an event listener given event’s currentTarget
-        // attribute value and listener.
         if let CompiledEventListener::Listener(event_listener) = listener {
+            let listeners_capture = event_target.is_capture(&event.type_(), event_listener);
+
+            // Step 2.3 If phase is "capturing" and listener’s capture is false, then continue.
+            if phase == ListenerPhase::Capturing && !listeners_capture {
+                continue;
+            }
+
+            // Step 2.4 If phase is "bubbling" and listener’s capture is true, then continue.
+            if phase == ListenerPhase::Bubbling && listeners_capture {
+                continue;
+            }
+
+            // Step 2.5 If listener’s once is true, then remove an event listener given event’s currentTarget
+            // attribute value and listener.
             event_target.remove_listener_if_once(&event.type_(), event_listener);
         }
 
