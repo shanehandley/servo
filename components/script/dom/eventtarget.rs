@@ -470,9 +470,9 @@ impl EventTarget {
             // is a node whose node document is eventTarget
             return event_target == node_document.upcast::<EventTarget>()
                 // or is a node whose node document’s document element is eventTarget
-                || node_document.GetDocumentElement().map_or(false, |n| n.upcast::<EventTarget>() == event_target)
+                || node_document.GetDocumentElement().is_some_and(|n| n.upcast::<EventTarget>() == event_target)
                 // or is a node whose node document’s body element is eventTarget
-                || node_document.GetBody().map_or(false, |n| n.upcast::<EventTarget>() == event_target);
+                || node_document.GetBody().is_some_and(|n| n.upcast::<EventTarget>() == event_target);
         }
 
         false
@@ -532,7 +532,7 @@ impl EventTarget {
         handlers
             .get(ty)
             .and_then(|entries| entries.iter().find(|e| e.listener == listener_instance))
-            .map_or(false, |entry| entry.capture)
+            .is_some_and(|entry| entry.capture)
     }
 
     /// Determines the `passive` attribute of an associated event listener
@@ -543,7 +543,7 @@ impl EventTarget {
         handlers
             .get(ty)
             .and_then(|entries| entries.iter().find(|e| e.listener == listener_instance))
-            .map_or(false, |entry| {
+            .is_some_and(|entry| {
                 entry.passive.unwrap_or(self.default_passive_value(ty))
             })
     }
