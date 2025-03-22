@@ -169,6 +169,7 @@ pub(crate) fn Fetch(
         RequestPolicyContainer::PolicyContainer(global.policy_container());
 
     // TODO: Step 4. If requestObject’s signal is aborted, then: [..]
+    // if request.Signal() // TODO this needs to be an option
 
     // Step 5. Let globalObject be request’s client’s global object.
     // NOTE:   We already get the global object as an argument

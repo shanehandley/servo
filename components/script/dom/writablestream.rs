@@ -657,7 +657,10 @@ impl WritableStream {
             return Promise::new_resolved(global, cx, (), can_gc);
         }
 
-        // TODO: Signal abort on stream.[[controller]].[[abortController]] with reason.
+        // Signal abort on stream.[[controller]].[[abortController]] with reason.
+        self.get_controller().map(|controller|
+            controller.signal_abort(provided_reason)
+        );
 
         // TODO: If state is "closed" or "errored", return a promise resolved with undefined.
         // Note: state may have changed because of signal above.
@@ -792,7 +795,7 @@ impl WritableStream {
     }
 
     /// <https://streams.spec.whatwg.org/#acquire-writable-stream-default-writer>
-    pub(crate) fn aquire_default_writer(
+    pub(crate) fn acquire_default_writer(
         &self,
         cx: SafeJSContext,
         global: &GlobalScope,
@@ -1025,7 +1028,7 @@ impl WritableStreamMethods<crate::DomTypeHolder> for WritableStream {
         let global = GlobalScope::from_safe_context(cx, realm);
 
         // Return ? AcquireWritableStreamDefaultWriter(this).
-        self.aquire_default_writer(cx, &global, can_gc)
+        self.acquire_default_writer(cx, &global, can_gc)
     }
 }
 

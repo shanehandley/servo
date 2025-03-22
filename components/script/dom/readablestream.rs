@@ -18,6 +18,7 @@ use js::rust::{
 };
 use js::typedarray::ArrayBufferViewU8;
 
+use crate::dom::abortsignal::AbortAlgorithm;
 use crate::dom::bindings::codegen::Bindings::QueuingStrategyBinding::QueuingStrategy;
 use crate::dom::bindings::codegen::Bindings::ReadableStreamBinding::{
     ReadableStreamGetReaderOptions, ReadableStreamMethods, ReadableStreamReaderMode, StreamPipeOptions
@@ -31,6 +32,7 @@ use crate::dom::bindings::codegen::Bindings::ReadableStreamDefaultControllerBind
 use crate::dom::bindings::codegen::Bindings::UnderlyingSourceBinding::UnderlyingSource as JsUnderlyingSource;
 use crate::dom::bindings::conversions::{ConversionBehavior, ConversionResult};
 use crate::dom::bindings::error::{Error, ErrorToJsval, Fallible};
+use crate::dom::bindings::codegen::GenericBindings::AbortSignalBinding::AbortSignal_Binding::AbortSignalMethods;
 use crate::dom::bindings::codegen::GenericBindings::WritableStreamDefaultWriterBinding::WritableStreamDefaultWriter_Binding::WritableStreamDefaultWriterMethods;
 use crate::dom::writablestream::WritableStream;
 use crate::dom::bindings::codegen::UnionTypes::ReadableStreamDefaultReaderOrReadableStreamBYOBReader as ReadableStreamReader;
@@ -61,6 +63,7 @@ use constellation_traits::MessagePortImpl;
 use crate::dom::bindings::transferable::Transferable;
 use crate::dom::bindings::structuredclone::{StructuredData, StructuredDataReader};
 
+use super::abortsignal::AbortSignal;
 use super::bindings::buffer_source::HeapBufferSource;
 use super::bindings::codegen::Bindings::ReadableStreamBYOBReaderBinding::ReadableStreamBYOBReaderReadOptions;
 use super::readablestreambyobreader::ReadIntoRequest;
@@ -1627,6 +1630,7 @@ impl ReadableStream {
         prevent_abort: bool,
         prevent_cancel: bool,
         prevent_close: bool,
+        abort_signal: Option<DomRoot<AbortSignal>>,
         realm: InRealm,
         can_gc: CanGc,
     ) -> Rc<Promise> {
@@ -1658,7 +1662,7 @@ impl ReadableStream {
 
         // Let writer be ! AcquireWritableStreamDefaultWriter(dest).
         let writer = dest
-            .aquire_default_writer(cx, global, can_gc)
+            .acquire_default_writer(cx, global, can_gc)
             .expect("Acquiring a default writer for pipe_to cannot fail");
 
         // Set source.[[disturbed]] to true.
@@ -1671,7 +1675,49 @@ impl ReadableStream {
         let promise = Promise::new(global, can_gc);
 
         // If signal is not undefined,
-        // TODO: implement AbortSignal.
+        if let Some(signal) = abort_signal {
+            // Let abortAlgorithm be the following steps:
+            let cx = GlobalScope::get_cx();
+            rooted!(in(*cx) let mut error = UndefinedValue());
+
+            // Let error be signal’s abort reason.
+            signal.Reason(cx, error.handle_mut());
+
+            // Let actions be an empty ordered set.
+            let mut actions: Vec<AbortAlgorithm> = vec![];
+
+            // If preventAbort is false, append the following action to actions:
+            if !prevent_abort {
+                let promise = Promise::new(&self.global(), can_gc);
+
+                // If dest.[[state]] is "writable", return ! WritableStreamAbort(dest, error).
+                if dest.is_writable() {
+                    actions.push(AbortAlgorithm::StreamAbort(promise));
+                } else {
+                    // Otherwise, return a promise resolved with undefined.
+                    actions.push(AbortAlgorithm::ResolveUndefined(promise));
+                }
+            }
+
+            // If preventCancel is false, append the following action action to actions:
+            if !prevent_cancel {
+                // If source.[[state]] is "readable", return ! ReadableStreamCancel(source, error).
+                if self.is_readable() {
+                } else {
+                    // Otherwise, return a promise resolved with undefined.
+                    actions.push(AbortAlgorithm::ResolveUndefined(Promise::new(
+                        &self.global(),
+                        can_gc,
+                    )));
+                }
+            }
+
+            // If signal is aborted, perform abortAlgorithm and return promise.
+            if signal.Aborted() {}
+
+            // Add abortAlgorithm to signal.
+            signal.add_abort_algorithms(actions);
+        }
 
         // In parallel, but not really, using reader and writer, read all chunks from source and write them to dest.
         rooted!(in(*cx) let pipe_to = PipeTo {
@@ -1978,9 +2024,6 @@ impl ReadableStreamMethods<crate::DomTypeHolder> for ReadableStream {
             return promise;
         }
 
-        // Let signal be options["signal"] if it exists, or undefined otherwise.
-        // TODO: implement AbortSignal.
-
         // Return ! ReadableStreamPipeTo.
         self.pipe_to(
             cx,
@@ -1989,6 +2032,7 @@ impl ReadableStreamMethods<crate::DomTypeHolder> for ReadableStream {
             options.preventAbort,
             options.preventCancel,
             options.preventClose,
+            options.signal.clone(),
             realm,
             can_gc,
         )
