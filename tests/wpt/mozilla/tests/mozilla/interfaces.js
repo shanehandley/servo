@@ -4,6 +4,7 @@ function test_interfaces(interfaceNamesInGlobalScope) {
     // IMPORTANT: Do not change this list without review from a JavaScript Engine peer!
     var ecmaGlobals = [
       "AbortController",
+      "AbortSignal",
       "AggregateError",
       "Array",
       "ArrayBuffer",

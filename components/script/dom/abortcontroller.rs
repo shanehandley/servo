@@ -21,16 +21,14 @@ pub(crate) struct AbortController {
 
 impl AbortController {
     pub fn new(global: &GlobalScope) -> AbortController {
-        let signal = AbortSignal::new(
-            global, false,
-        );
+        let signal = AbortSignal::new(global, false);
 
         AbortController {
             reflector_: Reflector::new(),
             signal: Dom::from_ref(&signal),
         }
     }
-    
+
     fn new_inherited(signal: &AbortSignal) -> AbortController {
         AbortController {
             reflector_: Reflector::new(),
@@ -61,6 +59,8 @@ impl AbortControllerMethods<crate::DomTypeHolder> for AbortController {
         proto: Option<HandleObject>,
         can_gc: CanGc,
     ) -> DomRoot<AbortController> {
+        warn!("Creating new AbortController");
+
         AbortController::new_with_proto(global, proto, can_gc)
     }
 

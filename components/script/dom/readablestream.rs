@@ -1630,8 +1630,8 @@ impl ReadableStream {
         prevent_abort: bool,
         prevent_cancel: bool,
         prevent_close: bool,
-        abort_signal: Option<DomRoot<AbortSignal>>,
         realm: InRealm,
+        abort_signal: Option<DomRoot<AbortSignal>>,
         can_gc: CanGc,
     ) -> Rc<Promise> {
         // Assert: source implements ReadableStream.
@@ -2032,8 +2032,8 @@ impl ReadableStreamMethods<crate::DomTypeHolder> for ReadableStream {
             options.preventAbort,
             options.preventCancel,
             options.preventClose,
-            options.signal.clone(),
             realm,
+            options.signal.clone(),
             can_gc,
         )
     }
@@ -2268,7 +2268,9 @@ impl Transferable for ReadableStream {
         writable.setup_cross_realm_transform_writable(cx, &port_1, can_gc);
 
         // Let promise be ! ReadableStreamPipeTo(value, writable, false, false, false).
-        let promise = self.pipe_to(cx, &global, &writable, false, false, false, comp, can_gc);
+        let promise = self.pipe_to(
+            cx, &global, &writable, false, false, false, comp, None, can_gc,
+        );
 
         // Set promise.[[PromiseIsHandled]] to true.
         promise.set_promise_is_handled();

@@ -12,7 +12,11 @@ async function prepareForBFCache(remoteContextHelper) {
 // Call `getBeforeCache()` after navigating back to the page. This returns the
 // value in window.
 async function getBeforeBFCache(remoteContextHelper) {
+  console.log('getBeforeBFCache')
+  console.log(typeof remoteContextHelper)
   return await remoteContextHelper.executeScript(() => {
+    console.log('script')
+    console.log(typeof window.beforeBFCache)
     return window.beforeBFCache;
   });
 }
@@ -21,7 +25,10 @@ async function getBeforeBFCache(remoteContextHelper) {
 // i.e., the page was restored from BFCache.
 // Call `prepareForBFCache()` before navigating away to call this function.
 async function assertImplementsBFCacheOptional(remoteContextHelper) {
+  console.log('assertImplementsBFCacheOptional')
+  
   var beforeBFCache = await getBeforeBFCache(remoteContextHelper);
+  console.log('beforeBFCache')
   assert_implements_optional(beforeBFCache == true, 'BFCache not supported.');
 }
 

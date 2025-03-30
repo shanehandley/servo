@@ -432,6 +432,9 @@
      *     being serialized and deserialized).
      */
     async executeScript(fn, args) {
+      console.log('executeScript')
+      console.log(typeof this.context)
+
       return this.context.execute_script(fn, args);
     }
 

@@ -20,7 +20,7 @@ use crate::dom::bindings::codegen::Bindings::UnderlyingSinkBinding::{
     UnderlyingSinkStartCallback, UnderlyingSinkWriteCallback,
 };
 use crate::dom::bindings::codegen::Bindings::WritableStreamDefaultControllerBinding::WritableStreamDefaultControllerMethods;
-use crate::dom::bindings::codegen::GenericBindings::AbortControllerBinding::AbortController_Binding::AbortControllerMethods;
+use crate::dom::bindings::codegen::Bindings::AbortControllerBinding::AbortControllerMethods;
 use crate::dom::bindings::error::{Error, ErrorToJsval};
 use crate::dom::bindings::reflector::{DomGlobal, Reflector, reflect_dom_object};
 use crate::dom::bindings::root::{Dom, DomRoot, MutNullableDom};
@@ -322,6 +322,7 @@ pub struct WritableStreamDefaultController {
     /// <https://streams.spec.whatwg.org/#writablestreamdefaultcontroller-stream>
     stream: MutNullableDom<WritableStream>,
 
+    /// <https://streams.spec.whatwg.org/#writablestreamdefaultcontroller-abortcontroller>
     abort_controller: MutNullableDom<AbortController>,
 }
 
@@ -346,7 +347,7 @@ impl WritableStreamDefaultController {
             strategy_hwm,
             strategy_size: RefCell::new(Some(strategy_size)),
             started: Default::default(),
-            abort_controller: Default::default()
+            abort_controller: Default::default(),
         }
     }
 
@@ -419,7 +420,8 @@ impl WritableStreamDefaultController {
         // Perform ! ResetQueue(controller).
 
         // Set controller.[[abortController]] to a new AbortController.
-        self.abort_controller.set(Some(&AbortController::new(&global)));
+        self.abort_controller
+            .set(Some(&AbortController::new(&global)));
 
         // Set controller.[[started]] to false.
 
@@ -982,10 +984,12 @@ impl WritableStreamDefaultController {
         stream.start_erroring(cx, global, e, can_gc);
     }
 
+    fn abort_controller(&self) -> DomRoot<AbortController> {
+        self.abort_controller.get().expect("abort_controller is unset")
+    }
+
     pub(crate) fn signal_abort(&self, reason: SafeHandleValue) {
-        self.abort_controller.get().map(|controller| {
-            controller.Signal().signal_abort(reason);
-        });
+        self.Signal().signal_abort(reason.clone());
     }
 }
 
@@ -994,7 +998,7 @@ impl WritableStreamDefaultControllerMethods<crate::DomTypeHolder>
 {
     /// <https://streams.spec.whatwg.org/#ws-default-controller-signal>
     fn Signal(&self) -> DomRoot<AbortSignal> {
-        todo!()
+        self.abort_controller().Signal()
     }
 
     /// <https://streams.spec.whatwg.org/#ws-default-controller-error>

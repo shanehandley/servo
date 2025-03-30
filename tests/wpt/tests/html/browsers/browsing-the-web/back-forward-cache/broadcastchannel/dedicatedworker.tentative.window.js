@@ -11,6 +11,8 @@
 // Ensure that broadcast channel messages sent to a dedicated
 // worker in bfcache are queued and dispatched upon restore.
 promise_test(async t => {
+  console.log('GFHDJSKFGHDJKSFGKJDSGHFKGDSHJKFGHDJSKFGHJKDSGH')
+
   const rcHelper = new RemoteContextHelper();
   // Open a window with noopener so that BFCache will work.
   const rc1 = await rcHelper.addWindow(
@@ -22,23 +24,36 @@ promise_test(async t => {
         scripts: ['../resources/worker-with-broadcastchannel.js'],
       },
   );
+
+  console.log('WHY U NO WORK AH?')
+
   await assertSimplestScriptRuns(worker);
 
+  console.log('^&F*(DS^&*FYDS^&FY*DSF^&D*YS)')
+  
   await prepareForBFCache(rc1);
+  console.log('2')
   const newRemoteContextHelper = await rc1.navigateToNew();
+  console.log('3')
   await assertSimplestScriptRuns(newRemoteContextHelper);
-
+  console.log('4')
+  
   // Send a message to a dedicated worker in bfcache.
   let channel = new BroadcastChannel('foo');
+  console.log('5')
   channel.postMessage('bar');
-
+  console.log('6')
+  
   await newRemoteContextHelper.historyBack();
+  console.log('7')
   // Make sure that rc1 gets restored without getting evicted. Messages
   // while in bfcache should be queued.
   await assertImplementsBFCacheOptional(rc1);
-
+  console.log('8')
+  
   // A message should arrive upon bfcache restore.
   await worker.executeScript(() => {
+    console.log('9')
     return waitForEventsPromise(1);
   });
 });

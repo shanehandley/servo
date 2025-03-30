@@ -3,7 +3,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use std::rc::Rc;
-use std::sync::atomic::AtomicBool;
 
 use dom_struct::dom_struct;
 use js::conversions::ToJSValConvertible;
@@ -11,7 +10,6 @@ use js::jsapi::{ExceptionStackBehavior, Heap, JS_IsExceptionPending};
 use js::jsval::{JSVal, UndefinedValue};
 use js::rust::wrappers::JS_SetPendingException;
 use js::rust::{HandleValue, MutableHandleValue};
-use net_traits::response::Response;
 use script_bindings::error::Fallible;
 use script_bindings::script_runtime::{CanGc, JSContext};
 
@@ -24,51 +22,26 @@ use crate::dom::bindings::codegen::Bindings::AbortSignalBinding::AbortSignalMeth
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::reflector::{DomGlobal, reflect_dom_object};
 use crate::dom::bindings::root::DomRoot;
-use crate::dom::bindings::str::DOMString;
 use crate::dom::bindings::weakref::WeakReferenceable;
 use crate::dom::domexception::DOMErrorName;
 use crate::dom::event::{Event, EventBubbles, EventCancelable};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
-use crate::dom::request::Request;
 use crate::dom::types::DOMException;
 
 /// <https://dom.spec.whatwg.org/#abortsignal-abort-algorithms>
 #[derive(JSTraceable, MallocSizeOf)]
 pub enum AbortAlgorithm {
-    RemoveEventListener(DomRoot<EventTarget>, DOMString),
-    FetchCancel {
-        #[ignore_malloc_size_of = "Rc"]
-        locally_aborted: Rc<AtomicBool>,
-        #[ignore_malloc_size_of = "Rc"]
-        promise: Rc<Promise>,
-        request: DomRoot<Request>,
-        #[no_trace]
-        response_object: Option<Response>,
-    },
     StreamAbort(#[ignore_malloc_size_of = "Rc"] Rc<Promise>),
     // A promise resolved with undefined
     ResolveUndefined(#[ignore_malloc_size_of = "Rc"] Rc<Promise>),
     /// <https://fetch.spec.whatwg.org/#abort-fetch>
-    AbortFetch {
-        #[ignore_malloc_size_of = "Rc"]
-        promise: Rc<Promise>,
-        request: DomRoot<Request>,
-        #[no_trace]
-        response_object: Response,
-    },
+    AbortFetch,
 }
 
 impl AbortAlgorithm {
     fn exec(self) {
-        let cx = *GlobalScope::get_cx();
-
         match self {
-            Self::AbortFetch {
-                promise,
-                request,
-                response_object,
-            } => {},
             Self::ResolveUndefined(promise) => {
                 promise.resolve_native(&(), CanGc::note());
             },
@@ -90,7 +63,7 @@ pub struct AbortSignal {
 }
 
 impl AbortSignal {
-    pub fn new_inherited(dependent: bool) -> Self {
+    pub fn new_inherited(dependent: bool) -> AbortSignal {
         Self {
             event_target: EventTarget::new_inherited(),
             reason: Heap::default(),
@@ -101,7 +74,9 @@ impl AbortSignal {
         }
     }
 
-    pub fn new(global: &GlobalScope, dependent: bool) -> DomRoot<Self> {
+    pub fn new(global: &GlobalScope, dependent: bool) -> DomRoot<AbortSignal> {
+        warn!("creating new AbortSignal");
+
         reflect_dom_object(
             Box::new(Self::new_inherited(dependent)),
             global,
@@ -114,11 +89,11 @@ impl AbortSignal {
         global: &GlobalScope,
         signals: Vec<DomRoot<Self>>,
     ) -> DomRoot<Self> {
-        // Step 1. Let resultSignal be a new object implementing signalInterface using realm.
+        // 1. Let resultSignal be a new object implementing signalInterface using realm.
         let result_signal = Self::new(global, false);
 
-        // Step 2. For each signal of signals: if signal is aborted, then set resultSignal’s abort
-        // reason to signal’s abort reason and return resultSignal.
+        // 2. For each signal of signals: if signal is aborted, then set resultSignal's abort
+        // reason to signal's abort reason and return resultSignal.
         for signal in &signals {
             if signal.Aborted() {
                 result_signal.reason.set(signal.reason.get().clone());
@@ -127,26 +102,26 @@ impl AbortSignal {
             }
         }
 
-        // Step 3. Set resultSignal's dependent to true.
+        // 3. Set resultSignal's dependent to true.
         result_signal.set_dependent(true);
 
-        // Step 4. For each signal of signals:
+        // 4. For each signal of signals:
         for signal in signals {
-            // Step 4.1. If signal's dependent is false:
+            // 4.1. If signal's dependent is false:
             if *signal.dependent.borrow() == false {
-                // Step 4.1.1. Append signal to resultSignal’s source signals.
+                // 4.1.1. Append signal to resultSignal’s source signals.
                 result_signal
                     .source_signals
                     .borrow_mut()
                     .push(signal.downgrade());
 
-                // Step 4.1.2. Append resultSignal to signal’s dependent signals.
+                // 4.1.2. Append resultSignal to signal’s dependent signals.
                 signal
                     .dependent_signals
                     .borrow_mut()
                     .push(WeakRef::new(&result_signal));
             } else {
-                // Step 4.1. Otherwise, for each sourceSignal of signal’s source signals:
+                // 4.1. Otherwise, for each sourceSignal of signal’s source signals:
                 for source_signal in signal.source_signals.borrow_mut().iter_mut() {
                     // ignore dropped source signals
                     if let Some(source_signal) = source_signal.root() {
