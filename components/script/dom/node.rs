@@ -2661,6 +2661,7 @@ impl Node {
                     false,
                     document.allow_declarative_shadow_roots(),
                     Some(document.insecure_requests_policy()),
+                    Some(document.active_sandboxing_flag_set()),
                     can_gc,
                 );
                 DomRoot::upcast::<Node>(document)

@@ -9,6 +9,7 @@ use base::cross_process_instant::CrossProcessInstant;
 use base::id::PipelineId;
 use base64::Engine as _;
 use base64::engine::general_purpose;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{self as csp, CspList};
 use dom_struct::dom_struct;
 use embedder_traits::resources::{self, Resource};
@@ -228,6 +229,7 @@ impl ServoParser {
             false,
             allow_declarative_shadow_roots,
             Some(context_document.insecure_requests_policy()),
+            Some(context_document.active_sandboxing_flag_set()),
             can_gc,
         );
 
@@ -851,7 +853,7 @@ impl FetchResponseListener for ParserContext {
 
         // https://www.w3.org/TR/CSP/#initialize-document-csp
         // TODO: Implement step 1 (local scheme special case)
-        let csp_list = metadata.as_ref().and_then(|m| {
+        let csp_list: Option<CspList> = metadata.as_ref().and_then(|m| {
             let h = m.headers.as_ref()?;
             let mut csp = h.get_all("content-security-policy").iter();
             // This silently ignores the CSP if it contains invalid Unicode.
@@ -883,7 +885,20 @@ impl FetchResponseListener for ParserContext {
 
         let _realm = enter_realm(&*parser.document);
 
-        parser.document.set_csp_list(csp_list);
+        parser.document.set_csp_list(csp_list.clone());
+
+        // TODO: Let finalSandboxFlags be the union of targetSnapshotParams's sandboxing flags and
+        // policyContainer's CSP list's CSP-derived sandboxing flags.
+        let sandboxing_flags = if let Some(csp) = csp_list {
+            csp.get_sandboxing_flag_set_for_document().unwrap_or(SandboxingFlagSet::all())
+        } else {
+            SandboxingFlagSet::all()
+        };
+
+        parser
+            .document
+            .set_active_sandboxing_flag_set(sandboxing_flags);
+
         self.parser = Some(Trusted::new(&*parser));
         self.submit_resource_timing();
 

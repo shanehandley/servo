@@ -120,6 +120,9 @@ pub struct LoadData {
 
     /// Servo internal: if crash details are present, trigger a crash error page with these details.
     pub crash: Option<String>,
+
+    /// TODO
+    pub sandboxing_flag_state: Vec<String>,
 }
 
 /// The result of evaluating a javascript scheme url.
@@ -142,6 +145,7 @@ impl LoadData {
         referrer_policy: ReferrerPolicy,
         inherited_secure_context: Option<bool>,
         inherited_insecure_requests_policy: Option<InsecureRequestsPolicy>,
+        sandboxing_flag_state: Vec<String>
     ) -> LoadData {
         LoadData {
             load_origin,
@@ -157,6 +161,7 @@ impl LoadData {
             inherited_secure_context,
             crash: None,
             inherited_insecure_requests_policy,
+            sandboxing_flag_state,
         }
     }
 }

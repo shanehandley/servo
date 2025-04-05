@@ -5,6 +5,7 @@
 use std::borrow::ToOwned;
 use std::cell::Cell;
 
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use dom_struct::dom_struct;
 use encoding_rs::{Encoding, UTF_8};
 use headers::{ContentType, HeaderMapExt};
@@ -744,6 +745,14 @@ impl HTMLFormElement {
         let doc = self.owner_document();
         let base = doc.base_url();
         // TODO: Handle browsing contexts (Step 4, 5)
+
+        // Step 4: If form document's active sandboxing flag set has its sandboxed forms browsing
+        // context flag set, then return.
+        if doc.has_active_sandboxing_flag(SandboxingFlagSet::SANDBOXED_FORMS_BROWSING_CONTEXT_FLAG)
+        {
+            return;
+        }
+
         // Step 6
         if submit_method_flag == SubmittedFrom::NotFromForm {
             // Step 6.1
@@ -867,6 +876,7 @@ impl HTMLFormElement {
             target_document.get_referrer_policy(),
             Some(target_window.as_global_scope().is_secure_context()),
             Some(target_document.insecure_requests_policy()),
+            vec![],
         );
 
         // Step 22

@@ -1515,6 +1515,7 @@ impl XMLHttpRequest {
             false,
             false,
             Some(doc.insecure_requests_policy()),
+            Some(doc.active_sandboxing_flag_set()),
             can_gc,
         )
     }
