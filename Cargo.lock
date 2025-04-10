@@ -1458,6 +1458,7 @@ dependencies = [
  "canvas_traits",
  "compositing_traits",
  "constellation_traits",
+ "content-security-policy",
  "crossbeam-channel",
  "devtools_traits",
  "embedder_traits",
