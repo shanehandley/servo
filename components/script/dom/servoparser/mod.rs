@@ -10,6 +10,7 @@ use base::cross_process_instant::CrossProcessInstant;
 use base::id::PipelineId;
 use base64::Engine as _;
 use base64::engine::general_purpose;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use devtools_traits::ScriptToDevtoolsControlMsg;
 use dom_struct::dom_struct;
 use embedder_traits::resources::{self, Resource};
@@ -937,6 +938,15 @@ impl FetchResponseListener for ParserContext {
 
         let _realm = enter_realm(&*parser.document);
 
+        // From Step 23.8.3 of https://html.spec.whatwg.org/multipage/#navigate
+        // Let finalSandboxFlags be the union of targetSnapshotParams's sandboxing flags and
+        // policyContainer's CSP list's CSP-derived sandboxing flags.
+        // TODO: implement targetSnapshotParam's sandboxing flags
+        let csp_derived_sandboxing_flag_set = csp_list
+            .as_ref()
+            .and_then(|csp| csp.get_sandboxing_flag_set_for_document())
+            .unwrap_or(SandboxingFlagSet::empty());
+
         if let Some(endpoints) = endpoints_list {
             parser.document.window().set_endpoints_list(endpoints);
         }
@@ -1012,12 +1022,25 @@ impl FetchResponseListener for ParserContext {
                     parser.parse_sync(CanGc::note());
                 },
                 Some(_) => {},
-                None => parser.document.set_csp_list(csp_list),
+                None => {
+                    parser
+                        .document
+                        .set_active_sandboxing_flag_set(csp_derived_sandboxing_flag_set);
+                    parser.document.set_csp_list(csp_list)
+                },
             },
             (mime::TEXT, mime::XML, _) |
             (mime::APPLICATION, mime::XML, _) |
-            (mime::APPLICATION, mime::JSON, _) => parser.document.set_csp_list(csp_list),
+            (mime::APPLICATION, mime::JSON, _) => {
+                parser
+                    .document
+                    .set_active_sandboxing_flag_set(csp_derived_sandboxing_flag_set);
+                parser.document.set_csp_list(csp_list)
+            },
             (mime::APPLICATION, subtype, Some(mime::XML)) if subtype == "xhtml" => {
+                parser
+                    .document
+                    .set_active_sandboxing_flag_set(csp_derived_sandboxing_flag_set);
                 parser.document.set_csp_list(csp_list)
             },
             (mime_type, subtype, _) => {
