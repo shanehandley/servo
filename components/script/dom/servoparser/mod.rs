@@ -863,9 +863,19 @@ impl FetchResponseListener for ParserContext {
             return;
         }
 
-        let _realm = enter_realm(&*parser.document);
+        if let Some(sandboxing_flag_set) = csp_list
+            .clone()
+            .and_then(|csp| csp.get_sandboxing_flag_set_for_document())
+        {
+            parser
+                .document
+                .set_active_sandboxing_flag_set(sandboxing_flag_set);
+        };
 
         parser.document.set_csp_list(csp_list);
+
+        let _realm = enter_realm(&*parser.document);
+
         self.parser = Some(Trusted::new(&*parser));
         self.submit_resource_timing();
 

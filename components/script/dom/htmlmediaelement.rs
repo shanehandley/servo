@@ -11,6 +11,7 @@ use std::{f64, mem};
 
 use compositing_traits::{CrossProcessCompositorApi, ImageUpdate, SerializableImageData};
 use content_security_policy as csp;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use dom_struct::dom_struct;
 use embedder_traits::resources::{self, Resource as EmbedderResource};
 use embedder_traits::{MediaPositionState, MediaSessionEvent, MediaSessionPlaybackState};
@@ -686,11 +687,14 @@ impl HTMLMediaElement {
         }
 
         if ready_state == ReadyState::HaveEnoughData {
-            // TODO: Check sandboxed automatic features browsing context flag.
-            // FIXME(nox): I have no idea what this TODO is about.
+            let document = self.owner_document();
+
+            let blocked_by_sandboxing = document.has_active_sandboxing_flag(
+                SandboxingFlagSet::SANDBOXED_AUTOMATIC_FEATURES_BROWSING_CONTEXT_FLAG,
+            );
 
             // FIXME(nox): Review this block.
-            if self.autoplaying.get() && self.Paused() && self.Autoplay() {
+            if !blocked_by_sandboxing && self.autoplaying.get() && self.Paused() && self.Autoplay() {
                 // Step 1
                 self.paused.set(false);
                 // Step 2

@@ -6,6 +6,7 @@ use std::borrow::ToOwned;
 use std::cell::Cell;
 
 use constellation_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior};
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use dom_struct::dom_struct;
 use encoding_rs::{Encoding, UTF_8};
 use headers::{ContentType, HeaderMapExt};
@@ -731,20 +732,28 @@ impl HTMLFormElement {
         submitter: FormSubmitterElement,
         can_gc: CanGc,
     ) {
-        // Step 1
+        // 1. If form cannot navigate, then return.
         if self.upcast::<Element>().cannot_navigate() {
             return;
         }
 
-        // Step 2
+        // 2. If form's constructing entry list is true, then return.
         if self.constructing_entry_list.get() {
             return;
         }
-        // Step 3
-        let doc = self.owner_document();
-        let base = doc.base_url();
-        // TODO: Handle browsing contexts (Step 4, 5)
-        // Step 6
+
+        // 3. Let form document be form's node document.
+        let form_document = self.owner_document();
+
+        // 4. If form document's active sandboxing flag set has its sandboxed forms browsing context
+        // flag set, then return.
+        if form_document
+            .has_active_sandboxing_flag(SandboxingFlagSet::SANDBOXED_FORMS_BROWSING_CONTEXT_FLAG)
+        {
+            return;
+        }
+
+        // 5. If submitted from submit() method is false, then:
         if submit_method_flag == SubmittedFrom::NotFromForm {
             // Step 6.1
             if self.firing_submission_events.get() {
@@ -752,12 +761,16 @@ impl HTMLFormElement {
             }
             // Step 6.2
             self.firing_submission_events.set(true);
-            // Step 6.3
+
+            // TODO: 5.3 For each element field in the list of submittable elements whose form owner is
+            // form, set field's user validity to true.
+
+            // 5.4
             if !submitter.no_validate(self) && self.interactive_validation(can_gc).is_err() {
                 self.firing_submission_events.set(false);
                 return;
             }
-            // Step 6.4
+            // Step 5.5
             // spec calls this "submitterButton" but it doesn't have to be a button,
             // just not be the form itself
             let submitter_button = match submitter {
@@ -772,7 +785,7 @@ impl HTMLFormElement {
                 FormSubmitterElement::Button(b) => Some(b.upcast::<HTMLElement>()),
             };
 
-            // Step 6.5
+            // Step 5.6
             let event = SubmitEvent::new(
                 self.global().as_window(),
                 atom!("submit"),
@@ -784,21 +797,24 @@ impl HTMLFormElement {
             let event = event.upcast::<Event>();
             event.fire(self.upcast::<EventTarget>(), can_gc);
 
-            // Step 6.6
+            // Step 5.7
             self.firing_submission_events.set(false);
-            // Step 6.7
+
+            // Step 5.8
             if event.DefaultPrevented() {
                 return;
             }
-            // Step 6.8
+
+            // 5.9 If form cannot navigate, then return.
             if self.upcast::<Element>().cannot_navigate() {
                 return;
             }
         }
 
-        // Step 7
+        // Step 6
         let encoding = self.pick_encoding();
 
+        // Step 7
         // Step 8
         let mut form_data = match self.get_form_dataset(Some(submitter), Some(encoding), can_gc) {
             Some(form_data) => form_data,
@@ -812,6 +828,8 @@ impl HTMLFormElement {
 
         // Step 10
         let mut action = submitter.action();
+
+        let base = form_document.base_url();
 
         // Step 11
         if action.is_empty() {
@@ -844,7 +862,7 @@ impl HTMLFormElement {
             .get_element_noopener(target_attribute_value.as_ref());
 
         // Step 19
-        let source = doc.browsing_context().unwrap();
+        let source = form_document.browsing_context().unwrap();
         let (maybe_chosen, _new) = source
             .choose_browsing_context(target_attribute_value.unwrap_or(DOMString::new()), noopener);
 
@@ -860,7 +878,7 @@ impl HTMLFormElement {
         // Step 21
         let target_window = target_document.window();
         let mut load_data = LoadData::new(
-            LoadOrigin::Script(doc.origin().immutable().clone()),
+            LoadOrigin::Script(form_document.origin().immutable().clone()),
             action_components,
             None,
             target_window.as_global_scope().get_referrer(),

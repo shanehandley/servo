@@ -22,6 +22,7 @@ use canvas_traits::canvas::CanvasId;
 use canvas_traits::webgl::{self, WebGLContextId, WebGLMsg};
 use chrono::Local;
 use constellation_traits::{NavigationHistoryBehavior, ScriptToConstellationMessage};
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{self as csp, CspList, PolicyDisposition};
 use cookie::Cookie;
 use cssparser::match_ignore_ascii_case;
@@ -562,6 +563,10 @@ pub(crate) struct Document {
     /// The active keyboard modifiers for the WebView. This is updated when receiving any input event.
     #[no_trace]
     active_keyboard_modifiers: Cell<Modifiers>,
+    #[no_trace]
+    #[ignore_malloc_size_of = "type from external crate"]
+    /// <https://html.spec.whatwg.org/multipage/#active-sandboxing-flag-set>,
+    active_sandboxing_flag_set: Cell<SandboxingFlagSet>,
 }
 
 #[allow(non_snake_case)]
@@ -1110,7 +1115,14 @@ impl Document {
     }
 
     /// Return whether scripting is enabled or not
+    ///
+    /// <https://html.spec.whatwg.org/multipage/webappapis.html#concept-n-noscript>
     pub(crate) fn is_scripting_enabled(&self) -> bool {
+        // self.scripting_enabled &&
+        //     !self.has_active_sandboxing_flag(
+        //         SandboxingFlagSet::SANDBOXED_SCRIPTS_BROWSING_CONTEXT_FLAG,
+        //     )
+
         self.scripting_enabled
     }
 
@@ -2791,11 +2803,18 @@ impl Document {
     }
 
     // https://html.spec.whatwg.org/multipage/#prompt-to-unload-a-document
+    //
+    // TODO: This may be https://html.spec.whatwg.org/multipage/#steps-to-fire-beforeunload
     pub(crate) fn prompt_to_unload(&self, recursive_flag: bool, can_gc: CanGc) -> bool {
-        // TODO: Step 1, increase the event loop's termination nesting level by 1.
-        // Step 2
+        // Step 2: Increase the document's unload counter by 1.
         self.incr_ignore_opens_during_unload_counter();
-        //Step 3-5.
+
+        // TODO: Step 3. Increase document's relevant agent's event loop's termination nesting level
+        // by 1.
+
+        // Step 4. Let eventFiringResult be the result of firing an event named beforeunload at
+        // document's relevant global object, using BeforeUnloadEvent, with the cancelable attribute
+        // initialized to true.
         let beforeunload_event = BeforeUnloadEvent::new(
             &self.window,
             atom!("beforeunload"),
@@ -2803,26 +2822,40 @@ impl Document {
             EventCancelable::Cancelable,
             can_gc,
         );
+
         let event = beforeunload_event.upcast::<Event>();
         event.set_trusted(true);
+
         let event_target = self.window.upcast::<EventTarget>();
+
         let has_listeners = event_target.has_listeners_for(&atom!("beforeunload"));
+
         self.window
             .dispatch_event_with_target_override(event, can_gc);
-        // TODO: Step 6, decrease the event loop's termination nesting level by 1.
-        // Step 7
+
+        // TODO: Step 5. Decrease document's relevant agent's event loop's termination nesting level
+        // by 1.
+
+        // Step 6. If all of the following are true:
+
+        // document's active sandboxing flag set does not have its sandboxed modals flag set;
+        let blocked_by_sandboxing_flags =
+            self.has_active_sandboxing_flag(SandboxingFlagSet::SANDBOXED_MODALS_FLAG);
+
         if has_listeners {
             self.salvageable.set(false);
         }
+
         let mut can_unload = true;
-        // TODO: Step 8, also check sandboxing modals flag.
+
         let default_prevented = event.DefaultPrevented();
         let return_value_not_empty = !event
             .downcast::<BeforeUnloadEvent>()
             .unwrap()
             .ReturnValue()
             .is_empty();
-        if default_prevented || return_value_not_empty {
+
+        if !blocked_by_sandboxing_flags && (default_prevented || return_value_not_empty) {
             let (chan, port) = ipc::channel().expect("Failed to create IPC channel!");
             let msg = EmbedderMsg::AllowUnload(self.webview_id(), chan);
             self.send_to_embedder(msg);
@@ -2845,8 +2878,11 @@ impl Document {
                 }
             }
         }
-        // Step 10
+
+        // Step 7. Decrease document's unload counter by 1.
         self.decr_ignore_opens_during_unload_counter();
+
+        // Step 8. Return (unloadPromptShown, unloadPromptCanceled).
         can_unload
     }
 
@@ -3966,6 +4002,7 @@ impl Document {
         allow_declarative_shadow_roots: bool,
         inherited_insecure_requests_policy: Option<InsecureRequestsPolicy>,
         has_trustworthy_ancestor_origin: bool,
+        active_sandboxing_flag_set: Option<SandboxingFlagSet>,
     ) -> Document {
         let url = url.unwrap_or_else(|| ServoUrl::parse("about:blank").unwrap());
 
@@ -4135,6 +4172,9 @@ impl Document {
             intersection_observer_task_queued: Cell::new(false),
             intersection_observers: Default::default(),
             active_keyboard_modifiers: Cell::new(Modifiers::empty()),
+            active_sandboxing_flag_set: Cell::new(
+                active_sandboxing_flag_set.unwrap_or(SandboxingFlagSet::empty()),
+            ),
         }
     }
 
@@ -4316,6 +4356,7 @@ impl Document {
             allow_declarative_shadow_roots,
             inherited_insecure_requests_policy,
             has_trustworthy_ancestor_origin,
+            None,
             can_gc,
         )
     }
@@ -4340,6 +4381,7 @@ impl Document {
         allow_declarative_shadow_roots: bool,
         inherited_insecure_requests_policy: Option<InsecureRequestsPolicy>,
         has_trustworthy_ancestor_origin: bool,
+        active_sandboxing_flag_set: Option<SandboxingFlagSet>,
         can_gc: CanGc,
     ) -> DomRoot<Document> {
         let document = reflect_dom_object_with_proto(
@@ -4361,6 +4403,7 @@ impl Document {
                 allow_declarative_shadow_roots,
                 inherited_insecure_requests_policy,
                 has_trustworthy_ancestor_origin,
+                active_sandboxing_flag_set,
             )),
             window,
             proto,
@@ -5126,6 +5169,14 @@ impl Document {
         self.has_trustworthy_ancestor_origin.get() ||
             self.origin().immutable().is_potentially_trustworthy()
     }
+
+    pub(crate) fn has_active_sandboxing_flag(&self, flag: SandboxingFlagSet) -> bool {
+        self.active_sandboxing_flag_set.get().contains(flag)
+    }
+
+    pub(crate) fn set_active_sandboxing_flag_set(&self, flags: SandboxingFlagSet) {
+        self.active_sandboxing_flag_set.set(flags)
+    }
 }
 
 #[allow(non_snake_case)]
@@ -5157,6 +5208,7 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
             doc.allow_declarative_shadow_roots(),
             Some(doc.insecure_requests_policy()),
             doc.has_trustworthy_ancestor_or_current_origin(),
+            None,
             can_gc,
         ))
     }
@@ -5246,16 +5298,20 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
         }
     }
 
-    // https://html.spec.whatwg.org/multipage/#dom-document-domain
+    /// <https://html.spec.whatwg.org/multipage/#dom-document-domain>
     fn SetDomain(&self, value: DOMString) -> ErrorResult {
         // Step 1.
         if !self.has_browsing_context {
             return Err(Error::Security);
         }
 
-        // TODO: Step 2. "If this Document object's active sandboxing
-        // flag set has its sandboxed document.domain browsing context
-        // flag set, then throw a "SecurityError" DOMException."
+        // Step 2. If this Document object's active sandboxing flag set has its sandboxed
+        // document.domain browsing context flag set, then throw a "SecurityError" DOMException.
+        if self.has_active_sandboxing_flag(
+            SandboxingFlagSet::SANDBOXED_DOCUMENT_DOMAIN_BROWSING_CONTEXT_FLAG,
+        ) {
+            return Err(Error::Security);
+        }
 
         // Steps 3-4.
         let effective_domain = match self.origin.effective_domain() {
