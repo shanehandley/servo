@@ -21,6 +21,7 @@ use canvas_traits::canvas::CanvasId;
 use canvas_traits::webgl::{self, WebGLContextId, WebGLMsg};
 use chrono::Local;
 use constellation_traits::{NavigationHistoryBehavior, ScriptToConstellationMessage};
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{CspList, PolicyDisposition};
 use cookie::Cookie;
 use cssparser::match_ignore_ascii_case;
@@ -574,6 +575,10 @@ pub(crate) struct Document {
     adopted_stylesheets_frozen_types: CachedFrozenArray,
     /// <https://drafts.csswg.org/cssom-view/#document-pending-scroll-event-targets>
     pending_scroll_event_targets: DomRefCell<Vec<Dom<EventTarget>>>,
+    #[no_trace]
+    #[ignore_malloc_size_of = "type from external crate"]
+    /// <https://html.spec.whatwg.org/multipage/#active-sandboxing-flag-set>,
+    active_sandboxing_flag_set: Cell<SandboxingFlagSet>,
 }
 
 #[allow(non_snake_case)]
@@ -4364,6 +4369,7 @@ impl Document {
             adopted_stylesheets: Default::default(),
             adopted_stylesheets_frozen_types: CachedFrozenArray::new(),
             pending_scroll_event_targets: Default::default(),
+            active_sandboxing_flag_set: Cell::new(SandboxingFlagSet::empty()),
         }
     }
 
@@ -5398,6 +5404,14 @@ impl Document {
     pub(crate) fn highlighted_dom_node(&self) -> Option<DomRoot<Node>> {
         self.highlighted_dom_node.get()
     }
+
+    pub(crate) fn has_active_sandboxing_flag(&self, flag: SandboxingFlagSet) -> bool {
+        self.active_sandboxing_flag_set.get().contains(flag)
+    }
+
+    pub(crate) fn set_active_sandboxing_flag_set(&self, flags: SandboxingFlagSet) {
+        self.active_sandboxing_flag_set.set(flags)
+    }
 }
 
 #[allow(non_snake_case)]
@@ -5518,16 +5532,20 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
         }
     }
 
-    // https://html.spec.whatwg.org/multipage/#dom-document-domain
+    /// <https://html.spec.whatwg.org/multipage/#dom-document-domain>
     fn SetDomain(&self, value: DOMString) -> ErrorResult {
         // Step 1.
         if !self.has_browsing_context {
             return Err(Error::Security);
         }
 
-        // TODO: Step 2. "If this Document object's active sandboxing
-        // flag set has its sandboxed document.domain browsing context
-        // flag set, then throw a "SecurityError" DOMException."
+        // Step 2. If this Document object's active sandboxing flag set has its sandboxed
+        // document.domain browsing context flag set, then throw a "SecurityError" DOMException.
+        if self.has_active_sandboxing_flag(
+            SandboxingFlagSet::SANDBOXED_DOCUMENT_DOMAIN_BROWSING_CONTEXT_FLAG,
+        ) {
+            return Err(Error::Security);
+        }
 
         // Steps 3-4.
         let effective_domain = match self.origin.effective_domain() {

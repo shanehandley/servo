@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="help" href="https://html.spec.whatwg.org/multipage/#eligible-for-autoplay" />
+</head>
+<title>Test that autoplay is blocked by a document's active sandboxing flags</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/common/media.js"></script>
+<video id="v" autoplay></video>
+<script>
+    test((t) => {
+      var v = document.getElementById('v')
+      v.addEventListener('error', t.unreached_func())
+      v.addEventListener('playing', t.unreached_func())
+      v.addEventListener('canplay', t.step_func(() => {
+        assert_true(v.paused)
+        t.done()
+      }))
+      v.src = getVideoURI('/media/movie_5') + '?' + new Date() + Math.random()
+    }, 'csp-derived sandboxing flags prevent autoplay.')
+</script>
+</html>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<link rel="help" href="https://html.spec.whatwg.org/multipage/#concept-form-submit">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<html>
+<form id="f">
+  <input type="hidden" value="test" />
+</form>
+<script>
+    async_test((t) => {
+      var f = document.getElementById('f')
+
+      f.addEventListener('error', t.unreached_func())
+      f.addEventListener('submit', t.unreached_func())
+      
+      f.submit()
+      t.done()
+    }, 'csp-derived sandboxing flags prevent form submission.')
+</script>
+</script>
+</body>
