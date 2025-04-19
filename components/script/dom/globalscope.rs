@@ -374,6 +374,9 @@ pub(crate) struct GlobalScope {
     #[ignore_malloc_size_of = "Rc<T> is hard"]
     notification_permission_request_callback_map:
         DomRefCell<HashMap<String, Rc<NotificationPermissionCallback>>>,
+
+    /// <https://w3c.github.io/trusted-types/dist/spec/#trustedtypepolicyfactory>
+    trusted_types: MutNullableDom<TrustedTypePolicyFactory>,
 }
 
 /// A wrapper for glue-code between the ipc router and the event-loop.
@@ -773,6 +776,7 @@ impl GlobalScope {
             byte_length_queuing_strategy_size_function: OnceCell::new(),
             count_queuing_strategy_size_function: OnceCell::new(),
             notification_permission_request_callback_map: Default::default(),
+            trusted_types: Default::default(),
         }
     }
 
@@ -3439,13 +3443,8 @@ impl GlobalScope {
     }
 
     pub(crate) fn trusted_types(&self, can_gc: CanGc) -> DomRoot<TrustedTypePolicyFactory> {
-        if let Some(window) = self.downcast::<Window>() {
-            return window.TrustedTypes(can_gc);
-        }
-        if let Some(worker) = self.downcast::<WorkerGlobalScope>() {
-            return worker.TrustedTypes(can_gc);
-        }
-        unreachable!();
+        self.trusted_types
+            .or_init(|| TrustedTypePolicyFactory::new(self, can_gc))
     }
 
     pub(crate) fn report_csp_violations(&self, violations: Vec<Violation>) {

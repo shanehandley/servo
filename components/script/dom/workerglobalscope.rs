@@ -483,10 +483,7 @@ impl WorkerGlobalScopeMethods<crate::DomTypeHolder> for WorkerGlobalScope {
 
     /// <https://www.w3.org/TR/trusted-types/#dom-windoworworkerglobalscope-trustedtypes>
     fn TrustedTypes(&self, can_gc: CanGc) -> DomRoot<TrustedTypePolicyFactory> {
-        self.trusted_types.or_init(|| {
-            let global_scope = self.upcast::<GlobalScope>();
-            TrustedTypePolicyFactory::new(global_scope, can_gc)
-        })
+        self.upcast::<GlobalScope>().trusted_types(can_gc)
     }
 }
 

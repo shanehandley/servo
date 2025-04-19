@@ -247,7 +247,6 @@ pub(crate) struct Window {
     session_storage: MutNullableDom<Storage>,
     local_storage: MutNullableDom<Storage>,
     status: DomRefCell<DOMString>,
-    trusted_types: MutNullableDom<TrustedTypePolicyFactory>,
 
     /// For sending timeline markers. Will be ignored if
     /// no devtools server
@@ -1688,9 +1687,9 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
             .structured_clone(cx, value, options, retval)
     }
 
+    /// <https://w3c.github.io/trusted-types/dist/spec/#extensions-to-the-windoworworkerglobalscope-interface>
     fn TrustedTypes(&self, can_gc: CanGc) -> DomRoot<TrustedTypePolicyFactory> {
-        self.trusted_types
-            .or_init(|| TrustedTypePolicyFactory::new(self.as_global_scope(), can_gc))
+        self.as_global_scope().trusted_types(can_gc)
     }
 }
 
@@ -2915,7 +2914,6 @@ impl Window {
             layout_marker: DomRefCell::new(Rc::new(Cell::new(true))),
             current_event: DomRefCell::new(None),
             theme: Cell::new(PrefersColorScheme::Light),
-            trusted_types: Default::default(),
         });
 
         unsafe {
