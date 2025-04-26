@@ -23,6 +23,7 @@ use http::{HeaderMap, Method};
 use ipc_channel::Error as IpcError;
 use ipc_channel::ipc::{IpcReceiver, IpcSender};
 use net_traits::policy_container::PolicyContainer;
+use net_traits::navigation::SourceSnapshotParams;
 use net_traits::request::{InsecureRequestsPolicy, Referrer, RequestBody};
 use net_traits::storage_thread::StorageType;
 use net_traits::{CoreResourceMsg, ReferrerPolicy, ResourceThreads};
@@ -111,6 +112,8 @@ pub struct LoadData {
     pub has_trustworthy_ancestor_origin: bool,
     /// Servo internal: if crash details are present, trigger a crash error page with these details.
     pub crash: Option<String>,
+    /// Navigation params https://html.spec.whatwg.org/multipage/#source-snapshot-params
+    pub source_snapshot_params: Option<SourceSnapshotParams>,
 }
 
 /// The result of evaluating a javascript scheme url.
@@ -135,6 +138,7 @@ impl LoadData {
         inherited_secure_context: Option<bool>,
         inherited_insecure_requests_policy: Option<InsecureRequestsPolicy>,
         has_trustworthy_ancestor_origin: bool,
+        source_snapshot_params: Option<SourceSnapshotParams>,
     ) -> LoadData {
         LoadData {
             load_origin,
@@ -152,6 +156,7 @@ impl LoadData {
             crash: None,
             inherited_insecure_requests_policy,
             has_trustworthy_ancestor_origin,
+            source_snapshot_params,
         }
     }
 }

@@ -32,6 +32,7 @@ use js::jsval::{NullValue, PrivateValue, UndefinedValue};
 use js::rust::wrappers::{JS_TransplantObject, NewWindowProxy, SetWindowProxy};
 use js::rust::{Handle, MutableHandle, MutableHandleValue, get_object_class};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
+use net_traits::navigation::SourceSnapshotParams;
 use net_traits::request::Referrer;
 use script_traits::NewLayoutInfo;
 use serde::{Deserialize, Serialize};
@@ -309,6 +310,7 @@ impl WindowProxy {
             None, // Doesn't inherit secure context
             None,
             false,
+            Some(SourceSnapshotParams::from(&*document)),
         );
         let load_info = AuxiliaryWebViewCreationRequest {
             load_data: load_data.clone(),
@@ -525,6 +527,7 @@ impl WindowProxy {
                 Some(secure),
                 Some(target_document.insecure_requests_policy()),
                 has_trustworthy_ancestor_origin,
+                Some(SourceSnapshotParams::from(&*target_document)),
             );
             let history_handling = if new {
                 NavigationHistoryBehavior::Replace

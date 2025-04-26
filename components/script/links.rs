@@ -7,6 +7,7 @@
 use constellation_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior};
 use html5ever::{local_name, ns};
 use malloc_size_of::malloc_size_of_is_0;
+use net_traits::navigation::SourceSnapshotParams;
 use net_traits::request::Referrer;
 use style::str::HTML_SPACE_CHARACTERS;
 
@@ -441,6 +442,7 @@ pub(crate) fn follow_hyperlink(
             Some(secure),
             Some(document.insecure_requests_policy()),
             document.has_trustworthy_ancestor_origin(),
+            Some(SourceSnapshotParams::from(&*document)),
         );
         let target = Trusted::new(target_window);
         let task = task!(navigate_follow_hyperlink: move || {

@@ -3278,6 +3278,10 @@ impl ScriptThread {
             true,
             incomplete.load_data.inherited_insecure_requests_policy,
             incomplete.load_data.has_trustworthy_ancestor_origin,
+            incomplete
+                .load_data
+                .source_snapshot_params
+                .map(|params| params.sandboxing_flags()),
             can_gc,
         );
 

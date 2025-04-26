@@ -4,6 +4,7 @@
 
 use constellation_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior};
 use dom_struct::dom_struct;
+use net_traits::navigation::SourceSnapshotParams;
 use net_traits::request::Referrer;
 use servo_url::{MutableOrigin, ServoUrl};
 
@@ -127,6 +128,7 @@ impl Location {
             None, // Top navigation doesn't inherit secure context
             Some(source_document.insecure_requests_policy()),
             source_document.has_trustworthy_ancestor_origin(),
+            Some(SourceSnapshotParams::from(&*source_document)),
         );
         self.window
             .load_url(history_handling, reload_triggered, load_data, can_gc);
