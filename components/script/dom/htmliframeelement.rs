@@ -18,6 +18,7 @@ use embedder_traits::ViewportDetails;
 use html5ever::{LocalName, Prefix, local_name, ns};
 use js::rust::HandleObject;
 use net_traits::ReferrerPolicy;
+use net_traits::navigation::SourceSnapshotParams;
 use profile_traits::ipc as ProfiledIpc;
 use script_traits::{NewLayoutInfo, UpdatePipelineIdReason};
 use servo_url::ServoUrl;
@@ -289,6 +290,7 @@ impl HTMLIFrameElement {
                 Some(window.as_global_scope().is_secure_context()),
                 Some(document.insecure_requests_policy()),
                 document.has_trustworthy_ancestor_or_current_origin(),
+                Some(SourceSnapshotParams::from(&*document)),
             );
             let element = self.upcast::<Element>();
             load_data.srcdoc = String::from(element.get_string_attribute(&local_name!("srcdoc")));
@@ -381,6 +383,7 @@ impl HTMLIFrameElement {
             Some(window.as_global_scope().is_secure_context()),
             Some(document.insecure_requests_policy()),
             document.has_trustworthy_ancestor_or_current_origin(),
+            Some(SourceSnapshotParams::from(&*document)),
         );
 
         let pipeline_id = self.pipeline_id();
@@ -427,6 +430,7 @@ impl HTMLIFrameElement {
             Some(window.as_global_scope().is_secure_context()),
             Some(document.insecure_requests_policy()),
             document.has_trustworthy_ancestor_or_current_origin(),
+            Some(SourceSnapshotParams::from(&*document)),
         );
         let browsing_context_id = BrowsingContextId::new();
         let webview_id = window.window_proxy().webview_id();

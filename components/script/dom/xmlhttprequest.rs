@@ -1526,6 +1526,7 @@ impl XMLHttpRequest {
             false,
             Some(doc.insecure_requests_policy()),
             doc.has_trustworthy_ancestor_origin(),
+            Some(doc.active_sandboxing_flag_set()),
             can_gc,
         )
     }

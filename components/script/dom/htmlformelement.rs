@@ -15,6 +15,7 @@ use http::Method;
 use js::rust::HandleObject;
 use mime::{self, Mime};
 use net_traits::http_percent_encode;
+use net_traits::navigation::SourceSnapshotParams;
 use net_traits::request::Referrer;
 use servo_rand::random;
 use style::attr::AttrValue;
@@ -886,6 +887,7 @@ impl HTMLFormElement {
             Some(target_window.as_global_scope().is_secure_context()),
             Some(target_document.insecure_requests_policy()),
             target_document.has_trustworthy_ancestor_origin(),
+            Some(SourceSnapshotParams::from(&*target_document)),
         );
 
         // Step 22

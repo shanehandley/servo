@@ -230,6 +230,7 @@ impl ServoParser {
             allow_declarative_shadow_roots,
             Some(context_document.insecure_requests_policy()),
             context_document.has_trustworthy_ancestor_or_current_origin(),
+            Some(context_document.active_sandboxing_flag_set()),
             can_gc,
         );
 

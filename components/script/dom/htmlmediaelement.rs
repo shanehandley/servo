@@ -694,7 +694,8 @@ impl HTMLMediaElement {
             );
 
             // FIXME(nox): Review this block.
-            if !blocked_by_sandboxing && self.autoplaying.get() && self.Paused() && self.Autoplay() {
+            if !blocked_by_sandboxing && self.autoplaying.get() && self.Paused() && self.Autoplay()
+            {
                 // Step 1
                 self.paused.set(false);
                 // Step 2

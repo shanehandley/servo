@@ -1368,6 +1368,7 @@ where
                     None,
                     None,
                     false,
+                    None,
                 );
                 let ctx_id = BrowsingContextId::from(webview_id);
                 let pipeline_id = match self.browsing_contexts.get(&ctx_id) {
@@ -3070,6 +3071,7 @@ where
             None,
             None,
             false,
+            None,
         );
         let sandbox = IFrameSandboxState::IFrameUnsandboxed;
         let is_private = false;
@@ -3619,8 +3621,8 @@ where
             "{}: Loading ({}replacing): {}",
             source_id,
             match history_handling {
-                NavigationHistoryBehavior::Push => "",
-                NavigationHistoryBehavior::Replace => "not ",
+                NavigationHistoryBehavior::Replace => "",
+                NavigationHistoryBehavior::Push => "not ",
                 NavigationHistoryBehavior::Auto => "unsure if ",
             },
             load_data.url,
@@ -3712,6 +3714,7 @@ where
 
                 let new_pipeline_id = PipelineId::new();
                 let sandbox = IFrameSandboxState::IFrameUnsandboxed;
+
                 self.new_pipeline(
                     new_pipeline_id,
                     browsing_context_id,
@@ -4664,6 +4667,7 @@ where
                     None,
                     None,
                     false,
+                    None,
                 );
                 self.load_url_for_webdriver(
                     webview_id,

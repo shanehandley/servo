@@ -44,6 +44,7 @@ use keyboard_types::{Code, Key, KeyState, Modifiers};
 use metrics::{InteractiveFlag, InteractiveWindow, ProgressiveWebMetrics};
 use net_traits::CookieSource::NonHTTP;
 use net_traits::CoreResourceMsg::{GetCookiesForUrl, SetCookiesForUrl};
+use net_traits::navigation::SourceSnapshotParams;
 use net_traits::policy_container::PolicyContainer;
 use net_traits::pub_domains::is_pub_domain;
 use net_traits::request::{InsecureRequestsPolicy, RequestBuilder};
@@ -4335,6 +4336,7 @@ impl Document {
         allow_declarative_shadow_roots: bool,
         inherited_insecure_requests_policy: Option<InsecureRequestsPolicy>,
         has_trustworthy_ancestor_origin: bool,
+        active_sandboxing_flag_set: Option<SandboxingFlagSet>,
         can_gc: CanGc,
     ) -> DomRoot<Document> {
         Self::new_with_proto(
@@ -4356,7 +4358,7 @@ impl Document {
             allow_declarative_shadow_roots,
             inherited_insecure_requests_policy,
             has_trustworthy_ancestor_origin,
-            None,
+            active_sandboxing_flag_set,
             can_gc,
         )
     }
@@ -4538,6 +4540,7 @@ impl Document {
                     self.allow_declarative_shadow_roots(),
                     Some(self.insecure_requests_policy()),
                     self.has_trustworthy_ancestor_or_current_origin(),
+                    Some(self.active_sandboxing_flag_set()),
                     can_gc,
                 );
                 new_doc
@@ -5168,6 +5171,10 @@ impl Document {
     pub fn has_trustworthy_ancestor_or_current_origin(&self) -> bool {
         self.has_trustworthy_ancestor_origin.get() ||
             self.origin().immutable().is_potentially_trustworthy()
+    }
+
+    pub(crate) fn active_sandboxing_flag_set(&self) -> SandboxingFlagSet {
+        self.active_sandboxing_flag_set.get()
     }
 
     pub(crate) fn has_active_sandboxing_flag(&self, flag: SandboxingFlagSet) -> bool {
@@ -6858,5 +6865,19 @@ fn is_named_element_with_id_attribute(elem: &Element) -> bool {
 impl DocumentHelpers for Document {
     fn ensure_safe_to_run_script_or_layout(&self) {
         Document::ensure_safe_to_run_script_or_layout(self)
+    }
+}
+
+/// <https://html.spec.whatwg.org/multipage/#snapshotting-source-snapshot-params>
+impl From<&Document> for SourceSnapshotParams {
+    fn from(document: &Document) -> SourceSnapshotParams {
+        SourceSnapshotParams::snapshot(
+            false, // TODO Implement transient activation
+            document.active_sandboxing_flag_set(),
+            document.has_active_sandboxing_flag(
+                SandboxingFlagSet::SANDBOXED_DOWNLOADS_BROWSING_CONTEXT_FLAG,
+            ),
+            document.policy_container().to_owned(),
+        )
     }
 }
