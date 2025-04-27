@@ -768,6 +768,30 @@ impl Window {
                 })
             );
     }
+
+    /// <https://html.spec.whatwg.org/multipage/#allowed-to-navigate>
+    fn allowed_by_sandboxing_to_navigate(&self) -> bool {
+        let source_document = self.Document();
+
+        // 2. If source is an ancestor of target, then return true.
+
+        // 3. If target is an ancestor of source, then:
+
+        // 3.1. If target is not a top-level traversable, then return true.
+
+        // 3.2. If sourceSnapshotParams's has transient activation is true, and
+        // sourceSnapshotParams's sandboxing flags's sandboxed top-level navigation with user
+        // activation browsing context flag is set, then return false.
+        // TODO we don't yet support user activation
+
+        // 3.3. If sourceSnapshotParams's has transient activation is false, and
+        // sourceSnapshotParams's sandboxing flags's sandboxed top-level navigation without user
+        // activation browsing context flag is set, then return false.
+
+        // 3.4. Return true.
+
+        true
+    }
 }
 
 // https://html.spec.whatwg.org/multipage/#atob
@@ -1031,6 +1055,7 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
             // TODO: rest of Step 3:
             // Is the incumbent settings object's responsible browsing context familiar with current?
             // Is the incumbent settings object's responsible browsing context allowed to navigate current?
+
             if is_script_closable {
                 // Step 3.1, set current's is closing to true.
                 window_proxy.close();
@@ -2616,12 +2641,34 @@ impl Window {
 
         // TODO: Important re security. See https://github.com/servo/servo/issues/23373
         // Step 5. check that the source browsing-context is "allowed to navigate" this window.
-        if let Some(sandboxing_flags) = load_data.source_snapshot_params.as_ref().map(|params| params.sandboxing_flags()) {
+        if let Some(sandboxing_flags) = load_data
+            .source_snapshot_params
+            .as_ref()
+            .map(|params| params.sandboxing_flags())
+        {
             // https://html.spec.whatwg.org/multipage/#allowed-to-navigate
+
+            warn!("------ Checking sanbboxing: {:?}", sandboxing_flags.clone());
+
+            // 3. If target is an ancestor of source, then:
+            // 3.3. If sourceSnapshotParams's has transient activation is false, and
+            // sourceSnapshotParams's sandboxing flags's sandboxed top-level navigation without user
+            // activation browsing context flag is set, then return false.
+            if sandboxing_flags.contains(SandboxingFlagSet::SANDBOXED_TOP_LEVEL_NAVIGATION_WITHOUT_USER_ACTIVATION_BROWSING_CONTEXT_FLAG) {
+                warn!("------ bailing because: {:?}", SandboxingFlagSet::SANDBOXED_TOP_LEVEL_NAVIGATION_WITHOUT_USER_ACTIVATION_BROWSING_CONTEXT_FLAG);
+                return;
+            }
 
             // 5. If sourceSnapshotParams's sandboxing flags's sandboxed navigation browsing context
             // flag is set, then return false.
-            if sandboxing_flags.contains(SandboxingFlagSet::SANDBOXED_NAVIGATION_BROWSING_CONTEXT_FLAG) {
+            if sandboxing_flags
+                .contains(SandboxingFlagSet::SANDBOXED_NAVIGATION_BROWSING_CONTEXT_FLAG)
+            {
+                warn!(
+                    "------ bailing because: {:?}",
+                    SandboxingFlagSet::SANDBOXED_NAVIGATION_BROWSING_CONTEXT_FLAG
+                );
+
                 // TODO If exceptionsEnabled is true, then throw a "SecurityError" DOMException.
 
                 return;

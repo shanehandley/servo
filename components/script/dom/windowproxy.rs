@@ -10,6 +10,7 @@ use constellation_traits::{
     AuxiliaryWebViewCreationRequest, LoadData, LoadOrigin, NavigationHistoryBehavior,
     ScriptToConstellationMessage,
 };
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use dom_struct::dom_struct;
 use html5ever::local_name;
 use indexmap::map::IndexMap;
@@ -34,6 +35,7 @@ use js::rust::{Handle, MutableHandle, MutableHandleValue, get_object_class};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use net_traits::navigation::SourceSnapshotParams;
 use net_traits::request::Referrer;
+use script_bindings::codegen::GenericBindings::WindowBinding::WindowMethods;
 use script_traits::NewLayoutInfo;
 use serde::{Deserialize, Serialize};
 use servo_url::{ImmutableOrigin, ServoUrl};
@@ -57,6 +59,17 @@ use crate::dom::window::Window;
 use crate::realms::{AlreadyInRealm, InRealm, enter_realm};
 use crate::script_runtime::{CanGc, JSContext as SafeJSContext};
 use crate::script_thread::ScriptThread;
+
+/// Used as part of The rules for choosing a navigable, which influences how history is handled
+/// during navigation.
+///
+/// <https://html.spec.whatwg.org/multipage/#the-rules-for-choosing-a-navigable>
+#[derive(Debug, PartialEq)]
+pub enum WindowType {
+    ExistingOrNone,
+    NewAndUnrestricted,
+    NewWithNoOpener,
+}
 
 #[dom_struct]
 // NOTE: the browsing context for a window is managed in two places:
@@ -286,6 +299,7 @@ impl WindowProxy {
         &self,
         name: DOMString,
         noopener: bool,
+        sandboxing_flags: Option<SandboxingFlagSet>,
     ) -> Option<DomRoot<WindowProxy>> {
         let (response_sender, response_receiver) = ipc::channel().unwrap();
         let window = self
@@ -300,6 +314,18 @@ impl WindowProxy {
             .get()
             .and_then(ScriptThread::find_document)
             .expect("A WindowProxy creating an auxiliary to have an active document");
+
+        let mut source_snapshot_params = SourceSnapshotParams::from(&*document);
+
+        // If sandboxingFlagSet's sandbox propagates to auxiliary browsing contexts flag is set,
+        // then all the flags that are set in sandboxingFlagSet must be set in chosen's active
+        // browsing context's popup sandboxing flag set.
+        if let Some(flags) = sandboxing_flags {
+            source_snapshot_params.set_sandboxing_flags(flags);
+        } else {
+            source_snapshot_params.set_sandboxing_flags(SandboxingFlagSet::empty());
+        }
+
         let blank_url = ServoUrl::parse("about:blank").ok().unwrap();
         let load_data = LoadData::new(
             LoadOrigin::Script(document.origin().immutable().clone()),
@@ -310,7 +336,7 @@ impl WindowProxy {
             None, // Doesn't inherit secure context
             None,
             false,
-            Some(SourceSnapshotParams::from(&*document)),
+            Some(source_snapshot_params),
         );
         let load_info = AuxiliaryWebViewCreationRequest {
             load_data: load_data.clone(),
@@ -465,13 +491,34 @@ impl WindowProxy {
         features: DOMString,
         can_gc: CanGc,
     ) -> Fallible<Option<DomRoot<WindowProxy>>> {
-        // Step 4.
+        // TODO: 1. If the event loop's termination nesting level is nonzero, then return null.
+
+        // 2. Let sourceDocument be the entry global object's associated Document.
+        let source_document = GlobalScope::entry().as_window().Document();
+
+        // 3. Let urlRecord be null.
+        let mut url_record: Option<ServoUrl> = None;
+
+        // 4. If url is not the empty string, then:
+        // 4.1. Set urlRecord to the result of encoding-parsing a URL given url, relative to
+        // sourceDocument.
+        // 4.2. If urlRecord is failure, then throw a "SyntaxError" DOMException.
+        if !url.is_empty() {
+            url_record = match source_document.url().join(&url) {
+                Ok(url) => Some(url),
+                Err(_) => return Err(Error::Syntax),
+            };
+        }
+
+        // 5. If target is the empty string, then set target to "_blank".
         let non_empty_target = match target.as_ref() {
             "" => DOMString::from("_blank"),
             _ => target,
         };
-        // Step 5
+
+        // 6. Let tokenizedFeatures be the result of tokenizing features.
         let tokenized_features = tokenize_open_features(features);
+
         // Step 7-9
         let noreferrer = parse_open_feature_boolean(&tokenized_features, "noreferrer");
         let noopener = if noreferrer {
@@ -479,16 +526,32 @@ impl WindowProxy {
         } else {
             parse_open_feature_boolean(&tokenized_features, "noopener")
         };
-        // Step 10, 11
-        let (chosen, new) = match self.choose_browsing_context(non_empty_target, noopener) {
-            (Some(chosen), new) => (chosen, new),
-            (None, _) => return Ok(None),
-        };
-        // TODO Step 12, set up browsing context features.
+
+        // 10. Remove tokenizedFeatures["noopener"] and tokenizedFeatures["noreferrer"].
+
+        // 11. Let referrerPolicy be the empty string.
+
+        // 12. If noreferrer is true, then set noopener to true and set referrerPolicy to "no-referrer".
+
+        // 13. Let targetNavigable and windowType be the result of applying the rules for choosing a
+        // navigable given target, sourceDocument's node navigable, and noopener.
+        let sandboxing_flag_set = source_document.active_sandboxing_flag_set();
+
+        let (chosen, new) =
+            match self.choose_browsing_context(non_empty_target, noopener, sandboxing_flag_set) {
+                (Some(chosen), new) => (chosen, new),
+                // 14. If targetNavigable is null, then return null.
+                (None, _) => return Ok(None),
+            };
+
         let target_document = match chosen.document() {
             Some(target_document) => target_document,
+            // 14. If targetNavigable is null, then return null.
             None => return Ok(None),
         };
+
+        // 15. If windowType is either "new and unrestricted" or "new with no opener", then:
+
         let has_trustworthy_ancestor_origin = if new {
             target_document.has_trustworthy_ancestor_or_current_origin()
         } else {
@@ -503,11 +566,7 @@ impl WindowProxy {
                 .get()
                 .and_then(ScriptThread::find_document)
                 .unwrap();
-            // Step 14.1
-            let url = match existing_document.url().join(&url) {
-                Ok(url) => url,
-                Err(_) => return Err(Error::Syntax),
-            };
+
             // Step 14.3
             let referrer = if noreferrer {
                 Referrer::NoReferrer
@@ -520,7 +579,7 @@ impl WindowProxy {
             let secure = target_window.as_global_scope().is_secure_context();
             let load_data = LoadData::new(
                 LoadOrigin::Script(existing_document.origin().immutable().clone()),
-                url,
+                url_record.unwrap(),
                 Some(pipeline_id),
                 referrer,
                 referrer_policy,
@@ -545,11 +604,12 @@ impl WindowProxy {
         Ok(target_document.browsing_context())
     }
 
-    // https://html.spec.whatwg.org/multipage/#the-rules-for-choosing-a-browsing-context-given-a-browsing-context-name
+    /// <https://html.spec.whatwg.org/multipage/#the-rules-for-choosing-a-navigable>
     pub(crate) fn choose_browsing_context(
         &self,
         name: DOMString,
         noopener: bool,
+        sandboxing_flag_set: SandboxingFlagSet,
     ) -> (Option<DomRoot<WindowProxy>>, bool) {
         match name.to_lowercase().as_ref() {
             "" | "_self" => {
@@ -567,7 +627,10 @@ impl WindowProxy {
                 // Step 5
                 (Some(DomRoot::from_ref(self.top())), false)
             },
-            "_blank" => (self.create_auxiliary_browsing_context(name, noopener), true),
+            "_blank" => (
+                self.create_auxiliary_browsing_context(name, noopener, None),
+                true,
+            ),
             _ => {
                 // Step 6.
                 // TODO: expand the search to all 'familiar' bc,
@@ -575,7 +638,28 @@ impl WindowProxy {
                 // See https://html.spec.whatwg.org/multipage/#familiar-with
                 match ScriptThread::find_window_proxy_by_name(&name) {
                     Some(proxy) => (Some(proxy), false),
-                    None => (self.create_auxiliary_browsing_context(name, noopener), true),
+                    None => {
+                        // If the user agent has been configured such that in this instance it will
+                        // create a new top-level traversable
+
+                        // If sandboxingFlagSet's sandbox propagates to auxiliary browsing contexts
+                        // flag is set, then all the flags that are set in sandboxingFlagSet must be
+                        // set in chosen's active browsing context's popup sandboxing flag set.
+                        let sandboxing_flags = if sandboxing_flag_set.contains(SandboxingFlagSet::SANDBOX_PROPOGATES_TO_AUXILIARY_BROWSING_CONTEXTS_FLAG) {
+                            sandboxing_flag_set
+                        } else {
+                            SandboxingFlagSet::empty()
+                        };
+
+                        (
+                            self.create_auxiliary_browsing_context(
+                                name,
+                                noopener,
+                                Some(sandboxing_flags),
+                            ),
+                            true,
+                        )
+                    },
                 }
             },
         }
