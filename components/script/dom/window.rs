@@ -2613,12 +2613,18 @@ impl Window {
 
         // TODO: Important re security. See https://github.com/servo/servo/issues/23373
         // Step 5. check that the source browsing-context is "allowed to navigate" this window.
-        if let Some(sandboxing_flags) = load_data.source_snapshot_params.as_ref().map(|params| params.sandboxing_flags()) {
+        if let Some(sandboxing_flags) = load_data
+            .source_snapshot_params
+            .as_ref()
+            .map(|params| params.sandboxing_flags())
+        {
             // https://html.spec.whatwg.org/multipage/#allowed-to-navigate
 
             // 5. If sourceSnapshotParams's sandboxing flags's sandboxed navigation browsing context
             // flag is set, then return false.
-            if sandboxing_flags.contains(SandboxingFlagSet::SANDBOXED_NAVIGATION_BROWSING_CONTEXT_FLAG) {
+            if sandboxing_flags
+                .contains(SandboxingFlagSet::SANDBOXED_NAVIGATION_BROWSING_CONTEXT_FLAG)
+            {
                 // TODO If exceptionsEnabled is true, then throw a "SecurityError" DOMException.
 
                 return;

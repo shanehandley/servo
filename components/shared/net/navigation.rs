@@ -34,4 +34,8 @@ impl SourceSnapshotParams {
     pub fn sandboxing_flags(&self) -> SandboxingFlagSet {
         self.sandboxing_flags
     }
+
+    pub fn set_sandboxing_flags(&mut self, sandboxing_flags: SandboxingFlagSet) {
+        self.sandboxing_flags = sandboxing_flags;
+    }
 }

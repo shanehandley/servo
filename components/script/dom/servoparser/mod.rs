@@ -864,10 +864,14 @@ impl FetchResponseListener for ParserContext {
             return;
         }
 
-        if let Some(sandboxing_flag_set) = csp_list
-            .clone()
-            .and_then(|csp| csp.get_sandboxing_flag_set_for_document())
-        {
+        // From Step 21.8.3 of https://html.spec.whatwg.org/multipage/#navigate
+        // TODO: Let finalSandboxFlags be the union of targetSnapshotParams's sandboxing flags and
+        // policyContainer's CSP list's CSP-derived sandboxing flags.
+        let csp_derived_sandboxing_flags = csp_list
+            .as_ref()
+            .and_then(|csp| csp.get_sandboxing_flag_set_for_document());
+
+        if let Some(sandboxing_flag_set) = csp_derived_sandboxing_flags {
             parser
                 .document
                 .set_active_sandboxing_flag_set(sandboxing_flag_set);

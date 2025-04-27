@@ -120,6 +120,7 @@ use constellation_traits::{
     ServiceWorkerManagerFactory, ServiceWorkerMsg, StructuredSerializedData, TraversalDirection,
     WindowSizeType,
 };
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use crossbeam_channel::{Receiver, Select, Sender, unbounded};
 use devtools_traits::{
     ChromeToDevtoolsControlMsg, DevtoolsControlMsg, DevtoolsPageInfo, NavigationState,
@@ -1093,6 +1094,7 @@ where
         is_private: bool,
         inherited_secure_context: Option<bool>,
         throttled: bool,
+        popup_sandboxing_flag_set: Option<SandboxingFlagSet>
     ) {
         debug!("{}: Creating new browsing context", browsing_context_id);
         let bc_group_id = match self
@@ -1126,6 +1128,7 @@ where
             is_private,
             inherited_secure_context,
             throttled,
+            popup_sandboxing_flag_set
         );
         self.browsing_contexts
             .insert(browsing_context_id, browsing_context);
@@ -5021,6 +5024,7 @@ where
                     new_context_info.is_private,
                     new_context_info.inherited_secure_context,
                     new_context_info.throttled,
+                    None,
                 );
                 self.update_activity(change.new_pipeline_id);
             },
