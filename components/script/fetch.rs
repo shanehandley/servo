@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use base::id::WebViewId;
 use content_security_policy as csp;
 use ipc_channel::ipc;
+use js::jsval::UndefinedValue;
 use net_traits::policy_container::{PolicyContainer, RequestPolicyContainer};
 use net_traits::request::{
     CorsSettings, CredentialsMode, Destination, InsecureRequestsPolicy, Referrer,
@@ -20,6 +21,8 @@ use net_traits::{
 };
 use servo_url::ServoUrl;
 
+use crate::dom::abortsignal::AbortAlgorithm;
+use crate::dom::bindings::codegen::Bindings::AbortSignalBinding::AbortSignalMethods;
 use crate::dom::bindings::codegen::Bindings::RequestBinding::{
     RequestInfo, RequestInit, RequestMethods,
 };
@@ -149,26 +152,49 @@ pub(crate) fn Fetch(
     let response = Response::new(global, can_gc);
     response.Headers(can_gc).set_guard(Guard::Immutable);
 
-    // Step 2. Let requestObject be the result of invoking the initial value of Request as constructor
-    //         with input and init as arguments. If this throws an exception, reject p with it and return p.
-    let request = match Request::Constructor(global, None, can_gc, input, init) {
+    // 2. Let requestObject be the result of invoking the initial value of Request as constructor
+    // with input and init as arguments. If this throws an exception, reject p with it and return p.
+    let request_object = match Request::Constructor(global, None, can_gc, input, init) {
+        Ok(r) => r,
         Err(e) => {
             response.error_stream(e.clone(), can_gc);
             promise.reject_error(e, can_gc);
             return promise;
         },
-        Ok(r) => {
-            // Step 3. Let request be requestObject’s request.
-            r.get_request()
-        },
     };
+
+    // 3. Let request be requestObject’s request.
+    let request = request_object.get_request();
+
     let timing_type = request.timing_type();
 
     let mut request_init = request_init_from_request(request);
+
     request_init.policy_container =
         RequestPolicyContainer::PolicyContainer(global.policy_container());
 
-    // TODO: Step 4. If requestObject’s signal is aborted, then: [..]
+    // 4. If requestObject’s signal is aborted, then: [..]
+    if request_object.Signal().Aborted() {
+        // 4.1. Abort the fetch() call with p, request, null, and requestObject’s signal’s abort
+        // reason.
+        let cx = GlobalScope::get_cx();
+        rooted!(in(*cx) let mut rval = UndefinedValue());
+
+        request_object.Signal().Reason(cx, rval.handle_mut());
+
+        // 4.1.1 Reject promise with error.
+        promise.reject_native(&rval.handle(), can_gc);
+
+        // 4.1.2 If request’s body is non-null and is readable, then cancel request’s body with error.
+        if let Some(request_body) = request_object.GetBody() {
+            if request_body.is_readable() {
+                request_body.cancel(rval.handle(), can_gc);
+            }
+        }
+
+        // 4.2 Return p
+        return promise;
+    }
 
     // Step 5. Let globalObject be request’s client’s global object.
     // NOTE:   We already get the global object as an argument
@@ -181,8 +207,11 @@ pub(crate) fn Fetch(
 
     // TODO: Steps 8-11, abortcontroller stuff
 
+    // 11. Add the following abort steps to requestObject’s signal:
+    request_object.Signal().add_abort_algorithms(vec![AbortAlgorithm::AbortFetch]);
+
     // Step 12. Set controller to the result of calling fetch given request and
-    //           processResponse given response being these steps: [..]
+    // processResponse given response being these steps: [..]
     let fetch_context = Arc::new(Mutex::new(FetchContext {
         fetch_promise: Some(TrustedPromise::new(promise.clone())),
         response_object: Trusted::new(&*response),

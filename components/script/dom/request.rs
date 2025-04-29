@@ -23,6 +23,7 @@ use servo_url::ServoUrl;
 
 use crate::body::{BodyMixin, BodyType, Extractable, consume_body};
 use crate::conversions::Convert;
+use crate::dom::abortsignal::AbortSignal;
 use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::codegen::Bindings::HeadersBinding::{HeadersInit, HeadersMethods};
 use crate::dom::bindings::codegen::Bindings::RequestBinding::{
@@ -47,15 +48,17 @@ pub(crate) struct Request {
     request: DomRefCell<NetTraitsRequest>,
     body_stream: MutNullableDom<ReadableStream>,
     headers: MutNullableDom<Headers>,
+    signal: MutNullableDom<AbortSignal>,
 }
 
 impl Request {
-    fn new_inherited(global: &GlobalScope, url: ServoUrl) -> Request {
+    fn new_inherited(global: &GlobalScope, url: ServoUrl, signal: Option<&AbortSignal>) -> Request {
         Request {
             reflector_: Reflector::new(),
             request: DomRefCell::new(net_request_from_global(global, url)),
             body_stream: MutNullableDom::new(None),
             headers: Default::default(),
+            signal: MutNullableDom::new(signal),
         }
     }
 
@@ -63,10 +66,11 @@ impl Request {
         global: &GlobalScope,
         proto: Option<HandleObject>,
         url: ServoUrl,
+        signal: Option<&AbortSignal>,
         can_gc: CanGc,
     ) -> DomRoot<Request> {
         reflect_dom_object_with_proto(
-            Box::new(Request::new_inherited(global, url)),
+            Box::new(Request::new_inherited(global, url, signal)),
             global,
             proto,
             can_gc,
@@ -79,16 +83,20 @@ impl Request {
         net_request: NetTraitsRequest,
         can_gc: CanGc,
     ) -> DomRoot<Request> {
-        let r = Request::new(global, proto, net_request.current_url(), can_gc);
+        let r = Request::new(global, proto, net_request.current_url(), None, can_gc);
         *r.request.borrow_mut() = net_request;
         r
     }
 
-    fn clone_from(r: &Request, can_gc: CanGc) -> Fallible<DomRoot<Request>> {
+    fn clone_from(
+        r: &Request,
+        signal: DomRoot<AbortSignal>,
+        can_gc: CanGc,
+    ) -> Fallible<DomRoot<Request>> {
         let req = r.request.borrow();
         let url = req.url();
         let headers_guard = r.Headers(can_gc).get_guard();
-        let r_clone = Request::new(&r.global(), None, url, can_gc);
+        let r_clone = Request::new(&r.global(), None, url, Some(&signal), can_gc);
         r_clone.request.borrow_mut().pipeline_id = req.pipeline_id;
         {
             let mut borrowed_r_request = r_clone.request.borrow_mut();
@@ -172,10 +180,11 @@ impl RequestMethods<crate::DomTypeHolder> for Request {
         // Step 2
         let mut fallback_mode: Option<NetTraitsRequestMode> = None;
 
-        // Step 3
+        // Step 3. Let baseURL be this’s relevant settings object’s API base URL.
         let base_url = global.api_base_url();
 
-        // Step 4 TODO: "Let signal be null."
+        // Step 4. Let signal be null.
+        let mut signal: Option<DomRoot<AbortSignal>> = None;
 
         match input {
             // Step 5
@@ -203,17 +212,19 @@ impl RequestMethods<crate::DomTypeHolder> for Request {
                 if request_is_disturbed(input_request) || request_is_locked(input_request) {
                     return Err(Error::Type("Input is disturbed or locked".to_string()));
                 }
+
                 // Step 6.1
                 temporary_request = input_request.request.borrow().clone();
-                // Step 6.2 TODO: "Set signal to input's signal."
+
+                // Step 6.2 Set signal to input's signal.
+                // signal = input.signal
             },
         }
 
-        // Step 7
-        // TODO: `entry settings object` is not implemented yet.
+        // Step 7. Let origin be this’s relevant settings object’s origin.
         let origin = base_url.origin();
 
-        // Step 8
+        // Step 8. Let window be "client".
         let mut window = Window::Client;
 
         // Step 9
@@ -224,7 +235,7 @@ impl RequestMethods<crate::DomTypeHolder> for Request {
             return Err(Error::Type("Window is present and is not null".to_string()));
         }
 
-        // Step 11
+        // Step 11. If init["window"] exists, then set window to "no-window".
         if !init.window.handle().is_undefined() {
             window = Window::NoWindow;
         }
@@ -374,14 +385,23 @@ impl RequestMethods<crate::DomTypeHolder> for Request {
             request.method = method;
         }
 
-        // Step 26 TODO: "If init["signal"] exists..."
+        // Step 26. If init["signal"] exists, then set signal to it
+        if let Some(init_signal) = init.signal.as_ref() {
+            signal = init_signal.clone();
+        }
+
         // Step 27 TODO: "If init["priority"] exists..."
 
         // Step 28
         let r = Request::from_net_request(global, proto, request, can_gc);
 
-        // Step 29 TODO: "Set this's signal to new AbortSignal object..."
-        // Step 30 TODO: "If signal is not null..."
+        // Step 29. Let signals be « signal » if signal is non-null; otherwise « ».
+        let signals = signal.map_or(vec![], |signal| vec![signal]);
+
+        // Step 30. Set this’s signal to the result of creating a dependent abort signal from
+        // signals, using AbortSignal and this’s relevant realm.
+        r.signal
+            .set(Some(&AbortSignal::create_dependent_signal(global, signals)));
 
         // Step 31
         // "or_init" looks unclear here, but it always enters the block since r
@@ -607,18 +627,32 @@ impl RequestMethods<crate::DomTypeHolder> for Request {
         self.is_disturbed()
     }
 
-    // https://fetch.spec.whatwg.org/#dom-request-clone
+    /// <https://fetch.spec.whatwg.org/#dom-request-clone>
     fn Clone(&self, can_gc: CanGc) -> Fallible<DomRoot<Request>> {
-        // Step 1
+        // Step 1. If this is unusable, then throw a TypeError.
         if request_is_locked(self) {
             return Err(Error::Type("Request is locked".to_string()));
         }
+
         if request_is_disturbed(self) {
             return Err(Error::Type("Request is disturbed".to_string()));
         }
 
-        // Step 2
-        Request::clone_from(self, can_gc)
+        // Step 3. Assert: this's signal is non-null.
+        let signal = self.signal.get().expect("signal is unset");
+
+        // Step 4. Let clonedSignal be the result of creating a dependent abort signal from
+        // « this’s signal », using AbortSignal and this’s relevant realm.
+        let cloned_signal = AbortSignal::create_dependent_signal(&self.global(), vec![signal]);
+
+        // Step 2. Let clonedRequest be the result of cloning this's request.
+        let cloned_request = Request::clone_from(self, cloned_signal, can_gc);
+
+        // Step 5. Let clonedRequestObject be the result of creating a Request object, given
+        // clonedRequest, this’s headers’s guard, clonedSignal and this’s relevant realm.
+
+        // Step 6. Return clonedRequestObject.
+        cloned_request
     }
 
     // https://fetch.spec.whatwg.org/#dom-body-text
@@ -649,6 +683,12 @@ impl RequestMethods<crate::DomTypeHolder> for Request {
     /// <https://fetch.spec.whatwg.org/#dom-body-bytes>
     fn Bytes(&self, can_gc: CanGc) -> std::rc::Rc<Promise> {
         consume_body(self, BodyType::Bytes, can_gc)
+    }
+
+    /// <https://fetch.spec.whatwg.org/#dom-request-signal>
+    fn Signal(&self) -> DomRoot<AbortSignal> {
+        self.signal
+            .or_init(|| AbortSignal::new(&self.global(), false))
     }
 }
 

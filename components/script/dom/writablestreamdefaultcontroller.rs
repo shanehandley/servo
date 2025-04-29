@@ -11,6 +11,8 @@ use js::jsapi::{Heap, IsPromiseObject, JSObject};
 use js::jsval::{JSVal, UndefinedValue};
 use js::rust::{HandleObject as SafeHandleObject, HandleValue as SafeHandleValue, IntoHandle};
 
+use crate::dom::abortcontroller::AbortController;
+use crate::dom::abortsignal::AbortSignal;
 use super::bindings::codegen::Bindings::QueuingStrategyBinding::QueuingStrategySize;
 use crate::dom::bindings::callback::ExceptionHandling;
 use crate::dom::bindings::codegen::Bindings::UnderlyingSinkBinding::{
@@ -18,6 +20,7 @@ use crate::dom::bindings::codegen::Bindings::UnderlyingSinkBinding::{
     UnderlyingSinkStartCallback, UnderlyingSinkWriteCallback,
 };
 use crate::dom::bindings::codegen::Bindings::WritableStreamDefaultControllerBinding::WritableStreamDefaultControllerMethods;
+use crate::dom::bindings::codegen::Bindings::AbortControllerBinding::AbortControllerMethods;
 use crate::dom::bindings::error::{Error, ErrorToJsval};
 use crate::dom::bindings::reflector::{DomGlobal, Reflector, reflect_dom_object};
 use crate::dom::bindings::root::{Dom, DomRoot, MutNullableDom};
@@ -318,6 +321,9 @@ pub struct WritableStreamDefaultController {
 
     /// <https://streams.spec.whatwg.org/#writablestreamdefaultcontroller-stream>
     stream: MutNullableDom<WritableStream>,
+
+    /// <https://streams.spec.whatwg.org/#writablestreamdefaultcontroller-abortcontroller>
+    abort_controller: MutNullableDom<AbortController>,
 }
 
 impl WritableStreamDefaultController {
@@ -341,6 +347,7 @@ impl WritableStreamDefaultController {
             strategy_hwm,
             strategy_size: RefCell::new(Some(strategy_size)),
             started: Default::default(),
+            abort_controller: Default::default(),
         }
     }
 
@@ -388,7 +395,7 @@ impl WritableStreamDefaultController {
         self.strategy_size.borrow_mut().take();
     }
 
-    /// <https://streams.spec.whatwg.org/#set-up-writable-stream-default-controllerr>
+    /// <https://streams.spec.whatwg.org/#set-up-writable-stream-default-controller>
     #[allow(unsafe_code)]
     pub(crate) fn setup(
         &self,
@@ -413,6 +420,8 @@ impl WritableStreamDefaultController {
         // Perform ! ResetQueue(controller).
 
         // Set controller.[[abortController]] to a new AbortController.
+        self.abort_controller
+            .set(Some(&AbortController::new(&global)));
 
         // Set controller.[[started]] to false.
 
@@ -974,11 +983,24 @@ impl WritableStreamDefaultController {
         // Perform ! WritableStreamStartErroring(stream, error).
         stream.start_erroring(cx, global, e, can_gc);
     }
+
+    fn abort_controller(&self) -> DomRoot<AbortController> {
+        self.abort_controller.get().expect("abort_controller is unset")
+    }
+
+    pub(crate) fn signal_abort(&self, reason: SafeHandleValue) {
+        self.Signal().signal_abort(reason.clone());
+    }
 }
 
 impl WritableStreamDefaultControllerMethods<crate::DomTypeHolder>
     for WritableStreamDefaultController
 {
+    /// <https://streams.spec.whatwg.org/#ws-default-controller-signal>
+    fn Signal(&self) -> DomRoot<AbortSignal> {
+        self.abort_controller().Signal()
+    }
+
     /// <https://streams.spec.whatwg.org/#ws-default-controller-error>
     fn Error(&self, cx: SafeJSContext, e: SafeHandleValue, realm: InRealm, can_gc: CanGc) {
         // Let state be this.[[stream]].[[state]].

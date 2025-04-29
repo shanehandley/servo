@@ -1,4 +1,6 @@
 async function assertSimplestScriptRuns(remoteContextWrapper) {
+  console.log('assertSimplestScriptRuns')
+
   assert_equals(
       await remoteContextWrapper.executeScript(() => {
         return 1;

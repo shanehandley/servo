@@ -71,6 +71,8 @@ const sendQueues = new Map();
 // Sends a single item (with rate-limiting) and calls the associated resolver
 // when it is successfully sent.
 const sendItem = async function (uuid, resolver, message) {
+  console.log('dispatcher::sendItem')
+
   await limiter(async () => {
     // Requests might be dropped. Retry until getting a confirmation it has been
     // processed.
@@ -80,9 +82,16 @@ const sendItem = async function (uuid, resolver, message) {
           method: 'POST',
           body: message
         })
-        if (await response.text() == "done") {
+
+        let responseText = await response.text()
+
+        if (responseText == "done") {
+        // if (await response.text() == "done") {
           resolver();
           return;
+        } else {
+          console.log('response')
+          console.log(responseText)
         }
       } catch (fetch_error) {}
       await randomDelay();
@@ -93,6 +102,8 @@ const sendItem = async function (uuid, resolver, message) {
 // While the queue is non-empty, send the next item. This is async and new items
 // may be added to the queue while others are being sent.
 const processQueue = async function (uuid, queue) {
+  console.log('dispatcher::processQueue')
+
   while (queue.length) {
     const [resolver, message] = queue.shift();
     await sendItem(uuid, resolver, message);
@@ -102,6 +113,8 @@ const processQueue = async function (uuid, queue) {
 }
 
 const send = async function (uuid, message) {
+  console.log('dispatcher::send')
+
   const itemSentPromise = new Promise((resolve) => {
     const item = [resolve, message];
     if (sendQueues.has(uuid)) {
@@ -197,9 +210,16 @@ class RemoteContext {
   //   preserved, except for `TypeError`.
   // The values should be able to be serialized by JSON.stringify().
   async execute_script(fn, args) {
+    console.log('RemoteContext::execute_script')
+    console.log(fn.toString())
+
     const receiver = token();
     await this.send({receiver: receiver, fn: fn.toString(), args: args});
     const response = JSON.parse(await receive(receiver));
+
+    console.log('RemoteContext::execute_script:response')
+    console.log(response)
+
     if (response.status === 'success') {
       return response.value;
     }
@@ -212,6 +232,8 @@ class RemoteContext {
   }
 
   async send(msg) {
+    console.log('RemoteContext::send')
+
     return await send(this.context_id, JSON.stringify(msg));
   }
 };

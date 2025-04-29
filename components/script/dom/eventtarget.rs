@@ -27,6 +27,7 @@ use style::str::HTML_SPACE_CHARACTERS;
 use stylo_atoms::Atom;
 
 use crate::conversions::Convert;
+use crate::dom::abortsignal::AbortAlgorithm;
 use crate::dom::beforeunloadevent::BeforeUnloadEvent;
 use crate::dom::bindings::callback::{CallbackContainer, CallbackFunction, ExceptionHandling};
 use crate::dom::bindings::cell::DomRefCell;
