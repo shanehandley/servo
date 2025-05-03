@@ -5,6 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use base::id::{BrowsingContextGroupId, BrowsingContextId, PipelineId, WebViewId};
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use embedder_traits::ViewportDetails;
 use log::warn;
 
@@ -72,6 +73,9 @@ pub struct BrowsingContext {
     /// All the pipelines that have been presented or will be presented in
     /// this browsing context.
     pub pipelines: HashSet<PipelineId>,
+
+    /// <https://html.spec.whatwg.org/multipage/#popup-sandboxing-flag-set>
+    pub popup_sandboxing_flag_set: Option<SandboxingFlagSet>
 }
 
 impl BrowsingContext {
@@ -88,6 +92,7 @@ impl BrowsingContext {
         is_private: bool,
         inherited_secure_context: Option<bool>,
         throttled: bool,
+        popup_sandboxing_flag_set: Option<SandboxingFlagSet>
     ) -> BrowsingContext {
         let mut pipelines = HashSet::new();
         pipelines.insert(pipeline_id);
@@ -102,6 +107,7 @@ impl BrowsingContext {
             pipeline_id,
             parent_pipeline_id,
             pipelines,
+            popup_sandboxing_flag_set
         }
     }
 

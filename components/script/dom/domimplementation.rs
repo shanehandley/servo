@@ -180,6 +180,7 @@ impl DOMImplementationMethods<crate::DomTypeHolder> for DOMImplementation {
             self.document.allow_declarative_shadow_roots(),
             Some(self.document.insecure_requests_policy()),
             self.document.has_trustworthy_ancestor_or_current_origin(),
+            Some(self.document.active_sandboxing_flag_set()),
             can_gc,
         );
 

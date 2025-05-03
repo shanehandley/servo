@@ -230,6 +230,7 @@ impl ServoParser {
             allow_declarative_shadow_roots,
             Some(context_document.insecure_requests_policy()),
             context_document.has_trustworthy_ancestor_or_current_origin(),
+            Some(context_document.active_sandboxing_flag_set()),
             can_gc,
         );
 
@@ -863,9 +864,23 @@ impl FetchResponseListener for ParserContext {
             return;
         }
 
-        let _realm = enter_realm(&*parser.document);
+        // From Step 21.8.3 of https://html.spec.whatwg.org/multipage/#navigate
+        // TODO: Let finalSandboxFlags be the union of targetSnapshotParams's sandboxing flags and
+        // policyContainer's CSP list's CSP-derived sandboxing flags.
+        let csp_derived_sandboxing_flags = csp_list
+            .as_ref()
+            .and_then(|csp| csp.get_sandboxing_flag_set_for_document());
+
+        if let Some(sandboxing_flag_set) = csp_derived_sandboxing_flags {
+            parser
+                .document
+                .set_active_sandboxing_flag_set(sandboxing_flag_set);
+        };
 
         parser.document.set_csp_list(csp_list);
+
+        let _realm = enter_realm(&*parser.document);
+
         self.parser = Some(Trusted::new(&*parser));
         self.submit_resource_timing();
 

@@ -7,6 +7,7 @@
 use constellation_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior};
 use html5ever::{local_name, ns};
 use malloc_size_of::malloc_size_of_is_0;
+use net_traits::navigation::SourceSnapshotParams;
 use net_traits::request::Referrer;
 use style::str::HTML_SPACE_CHARACTERS;
 
@@ -383,7 +384,11 @@ pub(crate) fn follow_hyperlink(
     let source = document.browsing_context().unwrap();
     let (maybe_chosen, history_handling) = match target_attribute_value {
         Some(name) => {
-            let (maybe_chosen, new) = source.choose_browsing_context(name, noopener);
+            let (maybe_chosen, new) = source.choose_browsing_context(
+                name,
+                noopener,
+                document.active_sandboxing_flag_set(),
+            );
             let history_handling = if new {
                 NavigationHistoryBehavior::Replace
             } else {
@@ -441,6 +446,7 @@ pub(crate) fn follow_hyperlink(
             Some(secure),
             Some(document.insecure_requests_policy()),
             document.has_trustworthy_ancestor_origin(),
+            Some(SourceSnapshotParams::from(&*document)),
         );
         let target = Trusted::new(target_window);
         let task = task!(navigate_follow_hyperlink: move || {
