@@ -12,6 +12,7 @@ use constellation_traits::{
 };
 use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use dom_struct::dom_struct;
+use headers::ReferrerPolicy;
 use html5ever::local_name;
 use indexmap::map::IndexMap;
 use ipc_channel::ipc;
@@ -35,6 +36,7 @@ use js::rust::{Handle, MutableHandle, MutableHandleValue, get_object_class};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use net_traits::navigation::SourceSnapshotParams;
 use net_traits::request::Referrer;
+use net_traits::ReferrerPolicy as NetTraitsReferrerPolicy;
 use script_bindings::codegen::GenericBindings::WindowBinding::WindowMethods;
 use script_traits::NewLayoutInfo;
 use serde::{Deserialize, Serialize};
@@ -530,18 +532,22 @@ impl WindowProxy {
         // 10. Remove tokenizedFeatures["noopener"] and tokenizedFeatures["noreferrer"].
 
         // 11. Let referrerPolicy be the empty string.
-
         // 12. If noreferrer is true, then set noopener to true and set referrerPolicy to "no-referrer".
+        let referrer_policy = if noreferrer {
+            NetTraitsReferrerPolicy::NoReferrer
+        } else {
+            NetTraitsReferrerPolicy::EmptyString
+        };
 
         // 13. Let targetNavigable and windowType be the result of applying the rules for choosing a
         // navigable given target, sourceDocument's node navigable, and noopener.
         let sandboxing_flag_set = source_document.active_sandboxing_flag_set();
 
-        let (chosen, new) =
+        let (chosen, new, window_type) =
             match self.choose_browsing_context(non_empty_target, noopener, sandboxing_flag_set) {
-                (Some(chosen), new) => (chosen, new),
+                (Some(chosen), new, window_type) => (chosen, new, window_type),
                 // 14. If targetNavigable is null, then return null.
-                (None, _) => return Ok(None),
+                (None, _, _) => return Ok(None),
             };
 
         let target_document = match chosen.document() {
@@ -549,59 +555,149 @@ impl WindowProxy {
             // 14. If targetNavigable is null, then return null.
             None => return Ok(None),
         };
-
-        // 15. If windowType is either "new and unrestricted" or "new with no opener", then:
+        
+        let target_window = target_document.window();
 
         let has_trustworthy_ancestor_origin = if new {
             target_document.has_trustworthy_ancestor_or_current_origin()
         } else {
             false
         };
-        let target_window = target_document.window();
-        // Step 13, and 14.4, will have happened elsewhere,
-        // since we've created a new browsing context and loaded it with about:blank.
-        if !url.is_empty() {
-            let existing_document = self
-                .currently_active
-                .get()
-                .and_then(ScriptThread::find_document)
-                .unwrap();
 
-            // Step 14.3
+        let history_handling = if new {
+            NavigationHistoryBehavior::Replace
+        } else {
+            NavigationHistoryBehavior::Push
+        };
+
+        // 15. If windowType is either "new and unrestricted" or "new with no opener", then:
+        if matches!(window_type, WindowType::NewAndUnrestricted | WindowType::NewWithNoOpener) {
+            // 15.1 Set targetNavigable's active browsing context's is popup to the result of
+            // checking if a popup window is requested, given tokenizedFeatures.
+
+            // 15.2 Set up browsing context features for targetNavigable's active browsing context
+            // given tokenizedFeatures.
+
+            // 15.3 If urlRecord is null, then set urlRecord to a URL record representing
+            // about:blank.
+            let about_blank_url = ServoUrl::parse("about:blank").unwrap();
+
+            let url = url_record.unwrap_or(about_blank_url);
+
             let referrer = if noreferrer {
                 Referrer::NoReferrer
             } else {
                 target_window.as_global_scope().get_referrer()
             };
-            // Step 14.5
-            let referrer_policy = target_document.get_referrer_policy();
+
+            // 15.4 If urlRecord matches about:blank, then perform the URL and history update steps
+            // given targetNavigable's active document and urlRecord.
+            if url.to_string() == "about:blank" {
+
+            } else {
+                // 15.5 Otherwise navigate targetNavigable to urlRecord using sourceDocument, with
+                // referrerPolicy set to referrerPolicy and exceptionsEnabled set to true.
+                let source_window = source_document.window();
+
+                let pipeline_id = source_window.pipeline_id();
+
+                let load_data = LoadData::new(
+                    LoadOrigin::Script(source_document.origin().immutable().clone()),
+                    url,
+                    Some(pipeline_id),
+                    referrer,
+                    referrer_policy,
+                    Some(target_window.as_global_scope().is_secure_context()),
+                    Some(target_document.insecure_requests_policy()),
+                    has_trustworthy_ancestor_origin,
+                    Some(SourceSnapshotParams::from(&*target_document)),
+                );
+
+                source_window.load_url(history_handling, false, load_data, can_gc);
+            }
+        } else {
+            // 16. Otherwise:
+            // 16.1. If urlRecord is not null, then navigate targetNavigable to urlRecord using
+            // sourceDocument, with referrerPolicy set to referrerPolicy and exceptionsEnabled set
+            // to true.
+            let referrer = if noreferrer {
+                Referrer::NoReferrer
+            } else {
+                target_window.as_global_scope().get_referrer()
+            };
+
             let pipeline_id = target_window.pipeline_id();
-            let secure = target_window.as_global_scope().is_secure_context();
+
             let load_data = LoadData::new(
-                LoadOrigin::Script(existing_document.origin().immutable().clone()),
-                url_record.unwrap(),
+                LoadOrigin::Script(source_document.origin().immutable().clone()),
+                url_record.expect("Invalid url"),
                 Some(pipeline_id),
                 referrer,
                 referrer_policy,
-                Some(secure),
+                Some(target_window.as_global_scope().is_secure_context()),
                 Some(target_document.insecure_requests_policy()),
                 has_trustworthy_ancestor_origin,
                 Some(SourceSnapshotParams::from(&*target_document)),
             );
-            let history_handling = if new {
-                NavigationHistoryBehavior::Replace
-            } else {
-                NavigationHistoryBehavior::Push
-            };
 
             target_window.load_url(history_handling, false, load_data, can_gc);
+
+            // 16.2. If noopener is false, then set targetNavigable's active browsing context's
+            // opener browsing context to sourceDocument's browsing context.
         }
-        if noopener {
-            // Step 15 (Dis-owning has been done in create_auxiliary_browsing_context).
+
+        // 17. If noopener is true or windowType is "new with no opener", then return null.
+        if noopener || window_type == WindowType::NewWithNoOpener {
             return Ok(None);
         }
-        // Step 17.
+
+        // 18. Return targetNavigable's active WindowProxy.
         Ok(target_document.browsing_context())
+
+        // // Step 13, and 14.4, will have happened elsewhere,
+        // // since we've created a new browsing context and loaded it with about:blank.
+        // if !url.is_empty() {
+        //     let existing_document = self
+        //         .currently_active
+        //         .get()
+        //         .and_then(ScriptThread::find_document)
+        //         .unwrap();
+
+        //     // Step 14.3
+        //     let referrer = if noreferrer {
+        //         Referrer::NoReferrer
+        //     } else {
+        //         target_window.as_global_scope().get_referrer()
+        //     };
+        //     // Step 14.5
+        //     let referrer_policy = target_document.get_referrer_policy();
+        //     let pipeline_id = target_window.pipeline_id();
+        //     let secure = target_window.as_global_scope().is_secure_context();
+        //     let load_data = LoadData::new(
+        //         LoadOrigin::Script(existing_document.origin().immutable().clone()),
+        //         url_record.unwrap(),
+        //         Some(pipeline_id),
+        //         referrer,
+        //         referrer_policy,
+        //         Some(secure),
+        //         Some(target_document.insecure_requests_policy()),
+        //         has_trustworthy_ancestor_origin,
+        //         Some(SourceSnapshotParams::from(&*target_document)),
+        //     );
+        //     let history_handling = if new {
+        //         NavigationHistoryBehavior::Replace
+        //     } else {
+        //         NavigationHistoryBehavior::Push
+        //     };
+
+        //     target_window.load_url(history_handling, false, load_data, can_gc);
+        // }
+        // if noopener {
+        //     // Step 15 (Dis-owning has been done in create_auxiliary_browsing_context).
+        //     return Ok(None);
+        // }
+        // // Step 17.
+        // Ok(target_document.browsing_context())
     }
 
     /// <https://html.spec.whatwg.org/multipage/#the-rules-for-choosing-a-navigable>
@@ -610,34 +706,39 @@ impl WindowProxy {
         name: DOMString,
         noopener: bool,
         sandboxing_flag_set: SandboxingFlagSet,
-    ) -> (Option<DomRoot<WindowProxy>>, bool) {
+    ) -> (Option<DomRoot<WindowProxy>>, bool, WindowType) {
+        // 2. Let windowType be "existing or none".
+        let mut window_type = WindowType::ExistingOrNone;
+
         match name.to_lowercase().as_ref() {
             "" | "_self" => {
-                // Step 3.
-                (Some(DomRoot::from_ref(self)), false)
+                // Step 4
+                (Some(DomRoot::from_ref(self)), false, window_type)
             },
             "_parent" => {
-                // Step 4
+                // Step 5
                 if let Some(parent) = self.parent() {
-                    return (Some(DomRoot::from_ref(parent)), false);
+                    return (Some(DomRoot::from_ref(parent)), false, window_type);
                 }
-                (None, false)
+                (None, false, window_type)
             },
             "_top" => {
-                // Step 5
-                (Some(DomRoot::from_ref(self.top())), false)
+                // Step 6
+                (Some(DomRoot::from_ref(self.top())), false, window_type)
             },
             "_blank" => (
-                self.create_auxiliary_browsing_context(name, noopener, None),
+                // Step 7
+                self.create_auxiliary_browsing_context(name, noopener, Some(sandboxing_flag_set)),
                 true,
+                window_type
             ),
             _ => {
-                // Step 6.
+                // Step 8. Otherwise, a new top-level traversable is being requested...
                 // TODO: expand the search to all 'familiar' bc,
                 // including auxiliaries familiar by way of their opener.
                 // See https://html.spec.whatwg.org/multipage/#familiar-with
                 match ScriptThread::find_window_proxy_by_name(&name) {
-                    Some(proxy) => (Some(proxy), false),
+                    Some(proxy) => (Some(proxy), false, window_type),
                     None => {
                         // If the user agent has been configured such that in this instance it will
                         // create a new top-level traversable
@@ -651,6 +752,12 @@ impl WindowProxy {
                             SandboxingFlagSet::empty()
                         };
 
+                        window_type = if noopener {
+                            WindowType::NewWithNoOpener
+                        } else {
+                            WindowType::NewAndUnrestricted
+                        };
+
                         (
                             self.create_auxiliary_browsing_context(
                                 name,
@@ -658,6 +765,7 @@ impl WindowProxy {
                                 Some(sandboxing_flags),
                             ),
                             true,
+                            window_type
                         )
                     },
                 }

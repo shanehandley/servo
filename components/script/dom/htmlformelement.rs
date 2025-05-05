@@ -812,7 +812,7 @@ impl HTMLFormElement {
             }
         }
 
-        // Step 6
+        // 6. Let encoding be the result of picking an encoding for the form.
         let encoding = self.pick_encoding();
 
         // Step 7
@@ -822,7 +822,7 @@ impl HTMLFormElement {
             None => return,
         };
 
-        // Step 9
+        // 9. If form cannot navigate, then return.
         if self.upcast::<Element>().cannot_navigate() {
             return;
         }
@@ -856,29 +856,38 @@ impl HTMLFormElement {
                 get_element_target(form.upcast::<Element>())
             };
 
-        // Step 18
+        
+
+        // Step 19
+
+        // 21. Let noopener be the result of getting an element's noopener with form, parsed action,
+        // and target.
         let noopener = self
             .relations
             .get()
             .get_element_noopener(target_attribute_value.as_ref());
 
-        // Step 19
+        // 22. Let Let targetNavigable be the first return value of applying the rules for choosing
+        // a navigable given target, form's node navigable, and noopener.
         let source = form_document.browsing_context().unwrap();
-        let (maybe_chosen, _new) = source.choose_browsing_context(
+        let (maybe_chosen, _new, _) = source.choose_browsing_context(
             target_attribute_value.unwrap_or(DOMString::new()),
             noopener,
             form_document.active_sandboxing_flag_set(),
         );
 
-        // Step 20
+        
         let chosen = match maybe_chosen {
             Some(proxy) => proxy,
+            // 23. If targetNavigable is null, then return.
             None => return,
         };
+
         let target_document = match chosen.document() {
             Some(doc) => doc,
             None => return,
         };
+
         // Step 21
         let target_window = target_document.window();
         let mut load_data = LoadData::new(

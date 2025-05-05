@@ -771,7 +771,7 @@ impl Window {
 
     /// <https://html.spec.whatwg.org/multipage/#allowed-to-navigate>
     fn allowed_by_sandboxing_to_navigate(&self) -> bool {
-        let source_document = self.Document();
+        let _source_document = self.Document();
 
         // 2. If source is an ancestor of target, then return true.
 

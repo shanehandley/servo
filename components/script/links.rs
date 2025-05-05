@@ -384,7 +384,7 @@ pub(crate) fn follow_hyperlink(
     let source = document.browsing_context().unwrap();
     let (maybe_chosen, history_handling) = match target_attribute_value {
         Some(name) => {
-            let (maybe_chosen, new) = source.choose_browsing_context(
+            let (maybe_chosen, new, _) = source.choose_browsing_context(
                 name,
                 noopener,
                 document.active_sandboxing_flag_set(),
