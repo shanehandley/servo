@@ -845,7 +845,7 @@ impl HTMLFormElement {
 
         // Step 19
         let source = doc.browsing_context().unwrap();
-        let (maybe_chosen, _new) = source
+        let (maybe_chosen, _new, _) = source
             .choose_browsing_context(target_attribute_value.unwrap_or(DOMString::new()), noopener);
 
         // Step 20
