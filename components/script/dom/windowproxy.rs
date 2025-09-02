@@ -312,6 +312,7 @@ impl WindowProxy {
             None, // Doesn't inherit secure context
             None,
             false,
+            Some(document.snapshot_source_snapshot_params()),
         );
         let load_info = AuxiliaryWebViewCreationRequest {
             load_data: load_data.clone(),
@@ -558,6 +559,7 @@ impl WindowProxy {
                 Some(secure),
                 Some(target_document.insecure_requests_policy()),
                 has_trustworthy_ancestor_origin,
+                Some(target_document.snapshot_source_snapshot_params()),
             );
             let history_handling = if new {
                 NavigationHistoryBehavior::Replace

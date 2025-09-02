@@ -12,6 +12,7 @@ use std::thread::{self, JoinHandle};
 use base::cross_process_instant::CrossProcessInstant;
 use base::generic_channel::{GenericSend, GenericSender, SendResult};
 use base::id::{CookieStoreId, HistoryStateId};
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{self as csp};
 use cookie::Cookie;
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -34,6 +35,7 @@ use servo_url::{ImmutableOrigin, ServoUrl};
 use crate::filemanager_thread::FileManagerThreadMsg;
 use crate::http_status::HttpStatus;
 use crate::indexeddb_thread::IndexedDBThreadMsg;
+use crate::policy_container::PolicyContainer;
 use crate::request::{Request, RequestBuilder};
 use crate::response::{HttpsState, Response, ResponseInit};
 use crate::storage_thread::StorageThreadMsg;
@@ -1098,3 +1100,17 @@ pub fn set_default_accept_language(headers: &mut HeaderMap) {
 
 pub static PRIVILEGED_SECRET: LazyLock<u32> =
     LazyLock::new(|| servo_rand::ServoRng::default().next_u32());
+
+/// <https://html.spec.whatwg.org/multipage/#source-snapshot-params>
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SourceSnapshotParams {
+    /// True if sourceDocument's relevant global object has transient activation; otherwise false
+    pub has_transient_activation: bool,
+    /// sourceDocument's active sandboxing flag set
+    pub sandboxing_flags: SandboxingFlagSet,
+    /// False if sourceDocument's active sandboxing flag set has the sandboxed downloads browsing
+    /// context flag set; otherwise true
+    pub allows_downloading: bool,
+    /// A policy container
+    pub source_policy_container: PolicyContainer,
+}

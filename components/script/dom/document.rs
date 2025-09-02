@@ -42,7 +42,7 @@ use net_traits::policy_container::PolicyContainer;
 use net_traits::pub_domains::is_pub_domain;
 use net_traits::request::{InsecureRequestsPolicy, RequestBuilder};
 use net_traits::response::HttpsState;
-use net_traits::{FetchResponseListener, IpcSend, ReferrerPolicy};
+use net_traits::{FetchResponseListener, IpcSend, ReferrerPolicy, SourceSnapshotParams};
 use percent_encoding::percent_decode;
 use profile_traits::ipc as profile_ipc;
 use profile_traits::time::TimerMetadataFrameType;
@@ -4211,6 +4211,18 @@ impl Document {
 
     pub(crate) fn cancel_animations_for_node(&self, node: &Node) {
         self.animations.borrow().cancel_animations_for_node(node);
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#snapshotting-source-snapshot-params>
+    pub fn snapshot_source_snapshot_params(&self) -> SourceSnapshotParams {
+        SourceSnapshotParams {
+            has_transient_activation: false, // TODO
+            sandboxing_flags: self.active_sandboxing_flag_set.get(),
+            allows_downloading: self.has_active_sandboxing_flag(
+                SandboxingFlagSet::SANDBOXED_DOWNLOADS_BROWSING_CONTEXT_FLAG,
+            ),
+            source_policy_container: self.policy_container().to_owned(),
+        }
     }
 
     /// An implementation of <https://drafts.csswg.org/web-animations-1/#update-animations-and-send-events>.

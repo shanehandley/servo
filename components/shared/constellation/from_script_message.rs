@@ -29,7 +29,7 @@ use malloc_size_of_derive::MallocSizeOf;
 use net_traits::policy_container::PolicyContainer;
 use net_traits::request::{Destination, InsecureRequestsPolicy, Referrer, RequestBody};
 use net_traits::storage_thread::StorageType;
-use net_traits::{ReferrerPolicy, ResourceThreads};
+use net_traits::{ReferrerPolicy, ResourceThreads, SourceSnapshotParams};
 use profile_traits::mem::MemoryReportResult;
 use profile_traits::{mem, time as profile_time};
 use serde::{Deserialize, Serialize};
@@ -117,6 +117,9 @@ pub struct LoadData {
     pub crash: Option<String>,
     /// Destination, used for CSP checks
     pub destination: Destination,
+    /// Used to capture data from a Document initiating a navigation.
+    /// <https://html.spec.whatwg.org/multipage/#source-snapshot-params>
+    pub source_snapshot_params: Option<SourceSnapshotParams>,
 }
 
 /// The result of evaluating a javascript scheme url.
@@ -141,6 +144,7 @@ impl LoadData {
         inherited_secure_context: Option<bool>,
         inherited_insecure_requests_policy: Option<InsecureRequestsPolicy>,
         has_trustworthy_ancestor_origin: bool,
+        source_snapshot_params: Option<SourceSnapshotParams>,
     ) -> LoadData {
         LoadData {
             load_origin,
@@ -159,6 +163,7 @@ impl LoadData {
             inherited_insecure_requests_policy,
             has_trustworthy_ancestor_origin,
             destination: Destination::Document,
+            source_snapshot_params,
         }
     }
 }

@@ -675,12 +675,17 @@ impl ScriptThread {
             return false;
         }
 
+        // Step 4. Let request be a new request whose URL is url and whose policy container is
+        // sourceSnapshotParams's source policy container.
+        let csp_list = load_data
+            .source_snapshot_params
+            .as_ref()
+            .map(|s| &s.source_policy_container)
+            .and_then(|pc| pc.csp_list.clone());
+
         // Step 5: If the result of should navigation request of type be blocked by
         // Content Security Policy? given request and cspNavigationType is "Blocked", then return. [CSP]
-        if global
-            .get_csp_list()
-            .should_navigation_request_be_blocked(global, load_data, container, can_gc)
-        {
+        if csp_list.should_navigation_request_be_blocked(global, load_data, container, can_gc) {
             return false;
         }
 
