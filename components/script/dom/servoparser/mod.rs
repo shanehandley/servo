@@ -927,7 +927,7 @@ impl ParserContext {
     fn initialize_document_object(&self, document: &Document) {
         // Step 9. Let document be a new Document, with
         document.set_policy_container(self.navigation_params.policy_container.clone());
-        document.set_active_sandboxing_flag_set(self.navigation_params.final_sandboxing_flag_set);
+        document.append_sandboxing_flags(self.navigation_params.final_sandboxing_flag_set);
     }
 
     /// <https://html.spec.whatwg.org/multipage/#loading-a-document>

@@ -3404,6 +3404,8 @@ impl ScriptThread {
             can_gc,
         );
 
+        document.append_sandboxing_flags(incomplete.load_data.sandboxing_flags);
+
         let referrer_policy = metadata
             .headers
             .as_deref()
