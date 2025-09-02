@@ -33,6 +33,7 @@ malloc_size_of_derive = { workspace = true }
 net_traits = { workspace = true }
 pixels = { path = "../../pixels" }
 profile_traits = { workspace = true }
+content-security-policy = { workspace = true}
 serde = { workspace = true }
 servo_config = { path = "../../config" }
 servo_url = { path = "../../url" }

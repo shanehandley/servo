@@ -11,6 +11,7 @@ use std::thread::{self, JoinHandle};
 use base::cross_process_instant::CrossProcessInstant;
 use base::generic_channel::{GenericSend, GenericSender, SendResult};
 use base::id::{CookieStoreId, HistoryStateId};
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use content_security_policy::{self as csp};
 use cookie::Cookie;
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -938,6 +939,10 @@ pub struct Metadata {
     pub timing: Option<ResourceFetchTiming>,
     /// True if the request comes from a redirection
     pub redirected: bool,
+
+    /// Sandboxing flags to be applied to a document being loaded
+    #[ignore_malloc_size_of = "Defined in rust-content-security-policy"]
+    pub sandboxing_flag_set: Option<SandboxingFlagSet>,
 }
 
 impl Metadata {
@@ -955,6 +960,7 @@ impl Metadata {
             referrer_policy: ReferrerPolicy::EmptyString,
             timing: None,
             redirected: false,
+            sandboxing_flag_set: None,
         }
     }
 

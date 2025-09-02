@@ -4436,7 +4436,8 @@ impl Document {
     }
 
     pub(crate) fn set_active_sandboxing_flag_set(&self, flags: SandboxingFlagSet) {
-        self.active_sandboxing_flag_set.set(flags)
+        self.active_sandboxing_flag_set
+            .set(self.active_sandboxing_flag_set.get().union(flags));
     }
 }
 
