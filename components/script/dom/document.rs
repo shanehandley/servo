@@ -357,9 +357,6 @@ pub(crate) struct Document {
     asap_in_order_scripts_list: PendingInOrderScriptVec,
     /// <https://html.spec.whatwg.org/multipage/#set-of-scripts-that-will-execute-as-soon-as-possible>
     asap_scripts_set: DomRefCell<Vec<Dom<HTMLScriptElement>>>,
-    /// <https://html.spec.whatwg.org/multipage/#concept-n-noscript>
-    /// True if scripting is enabled for all scripts in this document
-    scripting_enabled: bool,
     /// <https://html.spec.whatwg.org/multipage/#animation-frame-callback-identifier>
     /// Current identifier of animation frame callback
     animation_frame_ident: Cell<u32>,
@@ -1115,14 +1112,9 @@ impl Document {
     }
 
     /// Return whether scripting is enabled or not
-    pub(crate) fn is_scripting_enabled(&self) -> bool {
-        self.scripting_enabled
-    }
-
-    /// Return whether scripting is enabled or not
     /// <https://html.spec.whatwg.org/multipage/#concept-n-noscript>
     pub(crate) fn scripting_enabled(&self) -> bool {
-        self.has_browsing_context()
+        self.has_browsing_context() && self.global().scripting_enabled()
     }
 
     /// Return the element that currently has focus.
@@ -3365,7 +3357,6 @@ impl Document {
             deferred_scripts: Default::default(),
             asap_in_order_scripts_list: Default::default(),
             asap_scripts_set: Default::default(),
-            scripting_enabled: has_browsing_context,
             animation_frame_ident: Cell::new(0),
             animation_frame_list: DomRefCell::new(VecDeque::new()),
             running_animation_callbacks: Cell::new(false),

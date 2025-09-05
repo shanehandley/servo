@@ -688,7 +688,7 @@ impl HTMLScriptElement {
         }
 
         // Step 17. If scripting is disabled for el, then return.
-        if !doc.is_scripting_enabled() {
+        if !doc.scripting_enabled() {
             return;
         }
 
@@ -1090,15 +1090,15 @@ impl HTMLScriptElement {
         can_gc: CanGc,
         introduction_type: Option<&'static CStr>,
     ) {
-        // TODO use a settings object rather than this element's document/window
-        // Step 2
-        let document = self.owner_document();
-        if !document.is_fully_active() || !document.is_scripting_enabled() {
+        // 2. Check if we can run script with settings. If this returns "do not run", then return
+        // NormalCompletion(empty).
+        let window = self.owner_window();
+        let global = window.as_global_scope();
+
+        if !global.scripting_enabled() {
             return;
         }
 
-        // Steps 4-10
-        let window = self.owner_window();
         let line_number = if script.external {
             1
         } else {
@@ -1127,18 +1127,17 @@ impl HTMLScriptElement {
         _rethrow_errors: bool,
         can_gc: CanGc,
     ) {
-        // TODO use a settings object rather than this element's document/window
-        // Step 2
-        let document = self.owner_document();
-        if !document.is_fully_active() || !document.is_scripting_enabled() {
+        // 2. Check if we can run script with settings. If this returns "do not run", then return
+        // NormalCompletion(empty).
+        let window = self.owner_window();
+        let global = window.as_global_scope();
+
+        if !global.scripting_enabled() {
             return;
         }
 
         // Step 4
-        let window = self.owner_window();
-        let global = window.as_global_scope();
         let _aes = AutoEntryScript::new(global);
-
         let tree = if script.external {
             global.get_module_map().borrow().get(&script.url).cloned()
         } else {

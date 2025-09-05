@@ -23,6 +23,7 @@ use constellation_traits::{
     PortMessageTask, ScriptToConstellationChan, ScriptToConstellationMessage,
 };
 use content_security_policy::CspList;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use crossbeam_channel::Sender;
 use devtools_traits::{PageError, ScriptToDevtoolsControlMsg};
 use dom_struct::dom_struct;
@@ -3474,6 +3475,18 @@ impl GlobalScope {
             // Step 4. Append record to global's resolved module set.
             self.resolved_module_set.borrow_mut().insert(record);
         }
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#concept-environment-noscript>
+    pub(crate) fn scripting_enabled(&self) -> bool {
+        // Either settings's global object is not a Window object
+        self.downcast::<Window>().map_or(false, |window| {
+            // or settings's global object's associated Document's active sandboxing flag set does
+            // not have its sandboxed scripts browsing context flag set.
+            !window.Document().has_active_sandboxing_flag(
+                SandboxingFlagSet::SANDBOXED_SCRIPTS_BROWSING_CONTEXT_FLAG,
+            )
+        })
     }
 }
 
