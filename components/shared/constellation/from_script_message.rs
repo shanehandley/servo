@@ -14,6 +14,7 @@ use base::id::{
 };
 use canvas_traits::canvas::{CanvasId, CanvasMsg};
 use compositing_traits::CrossProcessCompositorApi;
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use devtools_traits::{DevtoolScriptControlMsg, ScriptToDevtoolsControlMsg, WorkerId};
 use embedder_traits::{
     AnimationState, FocusSequenceNumber, JSValue, JavaScriptEvaluationError,
@@ -104,7 +105,6 @@ pub struct LoadData {
     pub referrer_policy: ReferrerPolicy,
     /// The policy container.
     pub policy_container: Option<PolicyContainer>,
-
     /// The source to use instead of a network response for a srcdoc document.
     pub srcdoc: String,
     /// The inherited context is Secure, None if not inherited
@@ -117,6 +117,8 @@ pub struct LoadData {
     pub crash: Option<String>,
     /// Destination, used for CSP checks
     pub destination: Destination,
+    /// Sandboxing flags to be applied to the any created document.
+    pub sandboxing_flags: SandboxingFlagSet,
 }
 
 /// The result of evaluating a javascript scheme url.
@@ -159,6 +161,7 @@ impl LoadData {
             inherited_insecure_requests_policy,
             has_trustworthy_ancestor_origin,
             destination: Destination::Document,
+            sandboxing_flags: SandboxingFlagSet::empty(),
         }
     }
 }
