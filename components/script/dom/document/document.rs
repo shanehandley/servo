@@ -2236,13 +2236,18 @@ impl Document {
         let event_target = self.window.upcast::<EventTarget>();
         let has_listeners = event_target.has_listeners_for(&atom!("beforeunload"));
         self.window.dispatch_event_with_target_override(cx, event);
-        // TODO: Step 6, decrease the event loop's termination nesting level by 1.
+
+        // Step 6
+        if self.has_active_sandboxing_flag(SandboxingFlagSet::SANDBOXED_MODALS_FLAG) {
+            return false;
+        }
+
         // Step 7
         if has_listeners {
             self.salvageable.set(false);
         }
+
         let mut can_unload = true;
-        // TODO: Step 8, also check sandboxing modals flag.
         let default_prevented = event.DefaultPrevented();
         let return_value_not_empty = !event
             .downcast::<BeforeUnloadEvent>()
